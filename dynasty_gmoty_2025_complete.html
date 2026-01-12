@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 Dynasty GM of the Year - Ballers University</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;700;900&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00ff88;
+            --primary-dim: #00cc6a;
+            --danger: #ff4757;
+            --dark-bg: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --gold: #ffd700;
+            --silver: #c0c0c0;
+            --bronze: #cd7f32;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1, h2, h3, .stat-value {
+            font-family: 'Exo 2', sans-serif;
+            text-transform: uppercase;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            gap: 24px;
+            grid-template-columns: repeat(12, 1fr);
+        }
+
+        /* HEADER */
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 20px;
+            border: 1px solid #334155;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), #00d2ff, var(--primary));
+            background-size: 200% 100%;
+            animation: shimmer 3s linear infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .header h1 {
+            font-size: 4rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+            background: -webkit-linear-gradient(#fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 15px;
+        }
+
+        .header .subtitle {
+            color: var(--primary);
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: 5px;
+        }
+
+        .header .date {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 12px;
+            font-family: 'Inter', sans-serif;
+            text-transform: none;
+        }
+
+        /* WINNER CARD */
+        .winner-card {
+            grid-column: 1 / -1;
+            background: radial-gradient(circle at top right, rgba(0, 255, 136, 0.15), transparent), var(--card-bg);
+            border: 2px solid var(--primary);
+            border-radius: 24px;
+            padding: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            box-shadow: 0 15px 50px rgba(0, 255, 136, 0.25);
+        }
+
+        .winner-info h2 {
+            font-size: 1.4rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+
+        .winner-name {
+            font-size: 4.5rem;
+            font-weight: 900;
+            line-height: 1;
+            margin-bottom: 25px;
+            color: #fff;
+            text-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+        }
+
+        .winner-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            margin-top: 25px;
+        }
+
+        .winner-stat {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+        }
+
+        .winner-stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px;
+        }
+
+        .winner-stat-value {
+            font-size: 2.2rem;
+            color: var(--primary);
+            font-weight: 900;
+            font-family: 'Exo 2', sans-serif;
+        }
+
+        .winner-description {
+            margin-top: 25px;
+            color: var(--text-muted);
+            line-height: 1.9;
+            font-size: 1.05rem;
+        }
+
+        .winner-description strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .trophy-icon {
+            font-size: 11rem;
+            color: var(--gold);
+            filter: drop-shadow(0 0 25px rgba(255, 215, 0, 0.6));
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+
+        /* RANKINGS */
+        .podium-section {
+            grid-column: 1 / 9;
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 35px;
+            border: 1px solid #334155;
+        }
+
+        .section-title {
+            font-size: 1.7rem;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 18px;
+            border-bottom: 2px solid #334155;
+        }
+
+        .section-title i { color: var(--primary); font-size: 1.5rem; }
+
+        .ranking-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 18px;
+            background: rgba(255,255,255,0.03);
+            padding: 20px;
+            border-radius: 14px;
+            transition: all 0.3s;
+            border-left: 3px solid transparent;
+        }
+
+        .ranking-row:hover {
+            transform: translateX(8px);
+            background: rgba(255,255,255,0.06);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            border-left-color: var(--primary);
+        }
+
+        .rank-badge {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1.4rem;
+            margin-right: 22px;
+            flex-shrink: 0;
+        }
+
+        .rank-1 { background: linear-gradient(135deg, #ffd700, #ffed4e); color: #000; box-shadow: 0 0 20px rgba(255, 215, 0, 0.7); }
+        .rank-2 { background: linear-gradient(135deg, #c0c0c0, #e8e8e8); color: #000; box-shadow: 0 0 18px rgba(192, 192, 192, 0.6); }
+        .rank-3 { background: linear-gradient(135deg, #cd7f32, #e6a157); color: #000; box-shadow: 0 0 18px rgba(205, 127, 50, 0.6); }
+        .rank-4 { background: linear-gradient(135deg, #475569, #64748b); color: #fff; }
+
+        .team-details { flex-grow: 1; }
+        .team-name { font-weight: 700; font-size: 1.3rem; color: #fff; margin-bottom: 5px; }
+        .team-sub { font-size: 0.9rem; color: var(--text-muted); }
+
+        .team-score {
+            text-align: right;
+            margin-left: 20px;
+        }
+
+        .score-value {
+            font-size: 1.9rem;
+            font-weight: 900;
+            font-family: 'Exo 2', sans-serif;
+        }
+
+        .team-gain { color: var(--primary); }
+        .team-loss { color: var(--danger); }
+
+        .score-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-top: 4px;
+            letter-spacing: 1px;
+        }
+
+        /* TRADE AWARDS */
+        .trade-awards {
+            grid-column: 9 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
+
+        .trade-card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid #334155;
+            flex: 1;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .trade-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .trade-card.best::before { background: var(--primary); }
+        .trade-card.worst::before { background: var(--danger); }
+        .trade-card.fleece::before { background: var(--gold); }
+
+        .trade-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .trade-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1.8px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .manager-highlight {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .trade-player {
+            font-size: 1.05rem;
+            color: #cbd5e1;
+            margin-bottom: 8px;
+            line-height: 1.7;
+        }
+
+        .trade-player strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .trade-values {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin: 15px 0;
+            font-size: 0.9rem;
+        }
+
+        .trade-stat {
+            font-size: 2.4rem;
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 900;
+            margin-top: 10px;
+        }
+
+        .trade-detail {
+            font-size: 0.82rem;
+            color: #64748b;
+            margin-top: 12px;
+            font-style: italic;
+            line-height: 1.6;
+        }
+
+        .gain { color: var(--primary); }
+        .loss { color: var(--danger); }
+        .neutral { color: var(--text-muted); }
+
+        /* STATS GRID */
+        .stats-grid {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 22px;
+            margin-top: 25px;
+        }
+
+        .mini-stat {
+            background: var(--card-bg);
+            padding: 28px;
+            border-radius: 18px;
+            text-align: center;
+            border: 1px solid #334155;
+            transition: all 0.3s;
+        }
+
+        .mini-stat:hover {
+            border-color: var(--primary);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        }
+
+        .mini-label {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-bottom: 10px;
+        }
+
+        .mini-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            font-family: 'Exo 2', sans-serif;
+        }
+
+        .mini-value.highlight { color: var(--primary); }
+        .mini-value.danger { color: var(--danger); }
+        .mini-sub { font-size: 0.7rem; color: #64748b; margin-top: 5px; }
+
+        /* INSIGHTS */
+        .insights {
+            grid-column: 1 / -1;
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 40px;
+            border: 1px solid #334155;
+        }
+
+        .insight-item {
+            margin-bottom: 25px;
+            padding: 22px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 14px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .insight-item h3 {
+            font-size: 1.25rem;
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        .insight-item p {
+            color: var(--text-muted);
+            line-height: 1.85;
+        }
+
+        .insight-item strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* FOOTER */
+        .footer {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-top: 50px;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid #334155;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1024px) {
+            .podium-section { grid-column: 1 / -1; }
+            .trade-awards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2.8rem; }
+            .winner-name { font-size: 3.2rem; }
+            .winner-card { flex-direction: column; text-align: center; padding: 35px; }
+            .trophy-icon { margin-top: 25px; font-size: 8rem; }
+            .winner-stats { grid-template-columns: 1fr; }
+            .trade-awards { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 { font-size: 2.2rem; }
+            .winner-name { font-size: 2.5rem; }
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- HEADER -->
+    <header class="header">
+        <h1>🏆 DYNASTY GM OF THE YEAR 🏆</h1>
+        <div class="subtitle">2025 SEASON • BALLERS UNIVERSITY</div>
+        <div class="date">Final Report • Generated December 17, 2024</div>
+    </header>
+
+    <!-- WINNER -->
+    <div class="winner-card">
+        <div class="winner-info">
+            <h2>THE CHAMPION</h2>
+            <div class="winner-name">PTexas</div>
+            <div class="subtitle" style="color: #94a3b8; margin-bottom: 20px; font-size: 1.1rem;">Team Full of Scrubs</div>
+            
+            <div class="winner-stats">
+                <div class="winner-stat">
+                    <div class="winner-stat-label">GMOTY Score</div>
+                    <div class="winner-stat-value">212</div>
+                </div>
+                <div class="winner-stat">
+                    <div class="winner-stat-label">Season Wins</div>
+                    <div class="winner-stat-value">9</div>
+                </div>
+                <div class="winner-stat">
+                    <div class="winner-stat-label">Trades Made</div>
+                    <div class="winner-stat-value">2</div>
+                </div>
+            </div>
+            
+            <p class="winner-description">
+                In a season defined by playoff dominance, <strong>PTexas</strong> proved that winning games matters more than chasing speculative value. 
+                Despite a roster value decline of <span style="color: var(--danger); font-weight: 600;">-38,476</span>, PTexas secured a <strong>playoff berth with 9 wins</strong>, 
+                earning the critical 100-point playoff bonus. The win-now strategy paid off: sacrifice tomorrow's draft capital for today's victories. 
+                With only <strong>2 strategic trades</strong>, PTexas demonstrated efficiency over volume, focusing on roster construction and competitive performance rather than trade-desk theatrics.
+            </p>
+        </div>
+        <div class="trophy-icon">
+            <i class="fas fa-trophy"></i>
+        </div>
+    </div>
+
+    <!-- RANKINGS -->
+    <div class="podium-section">
+        <div class="section-title">
+            <i class="fas fa-ranking-star"></i> Final Power Rankings
+        </div>
+
+        <!-- Rank 1: PTexas -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-1">1</div>
+            <div class="team-details">
+                <div class="team-name">PTexas (Team Full of Scrubs)</div>
+                <div class="team-sub">Win-Now Maestro • 9 Wins • 2 Trades</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-38,476</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+        <!-- Rank 2: RC1988 -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-2">2</div>
+            <div class="team-details">
+                <div class="team-name">RC1988 (ALL STARS INC)</div>
+                <div class="team-sub">Playoff Bound • 9 Wins • 1 Trade</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-30,157</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+        <!-- Rank 3: 7RockFire -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-3">3</div>
+            <div class="team-details">
+                <div class="team-name">7RockFire</div>
+                <div class="team-sub">Trade Wizard • 9 Wins • Best Single Move</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-8,341</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+        <!-- Rank 4: UoohMama -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-4">4</div>
+            <div class="team-details">
+                <div class="team-name">UoohMama ( )</div>
+                <div class="team-sub">Competitive • 9 Wins • 3 Trades</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-49,969</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+        <!-- Rank 5: MaliciousKid -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-4">5</div>
+            <div class="team-details">
+                <div class="team-name">MaliciousKid</div>
+                <div class="team-sub">Hold Strategy • 9 Wins • 0 Trades</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-31,864</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+        <!-- Rank 6: MellowMorello -->
+        <div class="ranking-row">
+            <div class="rank-badge rank-4">6</div>
+            <div class="team-details">
+                <div class="team-name">MellowMorello (Big Chinese Season)</div>
+                <div class="team-sub">Active Trader • 8 Wins • 4 Deals</div>
+            </div>
+            <div class="team-score">
+                <div class="score-value team-loss">-53,800</div>
+                <div class="score-label">Value Change</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- TRADE AWARDS -->
+    <div class="trade-awards">
+        
+        <!-- BEST TRADE -->
+        <div class="trade-card best">
+            <div class="trade-title">
+                <i class="fas fa-check-circle"></i> Best Acquisition
+            </div>
+            <div class="manager-highlight">7RockFire</div>
+            <div class="trade-player">
+                <strong>Acquired:</strong> Jalen Royals + 2026 1st + 2027 2nd
+            </div>
+            <div class="trade-player">
+                <strong>Sent:</strong> DK Metcalf
+            </div>
+            <div class="trade-values">
+                <span class="neutral">At Trade: 2,705</span>
+                <span class="gain">Current: 6,149</span>
+            </div>
+            <div class="trade-stat gain">+3,444</div>
+            <div class="trade-detail">
+                Perfect timing selling DK Metcalf at peak value. Acquired rookie upside + premium draft capital. Masterclass in value extraction.
+            </div>
+        </div>
+
+        <!-- WORST TRADE -->
+        <div class="trade-card worst">
+            <div class="trade-title">
+                <i class="fas fa-times-circle"></i> Biggest Blunder
+            </div>
+            <div class="manager-highlight">UoohMama</div>
+            <div class="trade-player">
+                <strong>Sent:</strong> Tyrone Tracy + 2026 2nd + 2027 1st
+            </div>
+            <div class="trade-player">
+                <strong>For:</strong> Bucky Irving
+            </div>
+            <div class="trade-values">
+                <span class="neutral">At Trade: -1,319</span>
+                <span class="loss">Current: -2,586</span>
+            </div>
+            <div class="trade-stat loss">-1,267</div>
+            <div class="trade-detail">
+                Overpaid for Bucky Irving while Tyrone Tracy emerged as a league-winner. Lost the trade at execution and it got worse from there.
+            </div>
+        </div>
+
+        <!-- FLEECE AWARD -->
+        <div class="trade-card fleece">
+            <div class="trade-title">
+                <i class="fas fa-crown"></i> The "Fleece" Award
+            </div>
+            <div class="manager-highlight">Dzel45</div>
+            <div class="trade-player">
+                <strong>Acquired:</strong> 2026 1st Round Pick
+            </div>
+            <div class="trade-player">
+                <strong>Sent:</strong> George Kittle
+            </div>
+            <div class="trade-values">
+                <span class="neutral">At Trade: 1,797</span>
+                <span class="gain">Now: 4,993</span>
+            </div>
+            <div class="trade-stat gain">+3,196</div>
+            <div class="trade-detail">
+                Sold aging Kittle before value cratered, acquired premium 2026 1st that skyrocketed. Pure draft capital arbitrage.
+            </div>
+        </div>
+
+    </div>
+
+    <!-- STATS GRID -->
+    <div class="stats-grid">
+        <div class="mini-stat">
+            <div class="mini-label">Total Trades</div>
+            <div class="mini-value">11</div>
+            <div class="mini-sub">22 trade sides</div>
+        </div>
+        <div class="mini-stat">
+            <div class="mini-label">Most Active Traders</div>
+            <div class="mini-value highlight" style="font-size: 1.3rem;">Dzel45 • elite • Mellow</div>
+            <div class="mini-sub">4 trades each</div>
+        </div>
+        <div class="mini-stat">
+            <div class="mini-label">Waiver + FA Moves</div>
+            <div class="mini-value">478</div>
+            <div class="mini-sub">204 waivers, 274 FA adds</div>
+        </div>
+        <div class="mini-stat">
+            <div class="mini-label">League Net Value</div>
+            <div class="mini-value danger">-270,801</div>
+            <div class="mini-sub">Market correction</div>
+        </div>
+        <div class="mini-stat">
+            <div class="mini-label">Playoff Teams</div>
+            <div class="mini-value highlight">6</div>
+            <div class="mini-sub">All with 8-9 wins</div>
+        </div>
+        <div class="mini-stat">
+            <div class="mini-label">Draft Picks Traded</div>
+            <div class="mini-value">17</div>
+            <div class="mini-sub">Mostly 2026-2027 1sts</div>
+        </div>
+    </div>
+
+    <!-- KEY INSIGHTS -->
+    <div class="insights">
+        <div class="section-title">
+            <i class="fas fa-lightbulb"></i> 2025 Season Analysis & Insights
+        </div>
+
+        <div class="insight-item">
+            <h3>💡 The Playoff Bonus Dominates Everything</h3>
+            <p>
+                <strong>All top 6 finishers made the playoffs</strong> (tied at 9 wins or 8 wins). The 100-point playoff bonus completely overshadowed value changes, 
+                proving that in this league, <strong>winning games > asset hoarding</strong>. PTexas won GMOTY despite having the 5th-worst value decline in the league (-38K). 
+                Five of the six playoff teams had negative value changes, yet they dominate the GMOTY standings. Lesson: <strong>Compete NOW</strong>.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>📉 Market-Wide Value Correction</h3>
+            <p>
+                The league collectively lost <strong>270,801 in value</strong> from auction to Week 17. This massive decline suggests:
+                (1) <strong>Rookie class underwhelmed</strong> - draft pick values crashed as the 2025 class failed to produce immediate starters,
+                (2) <strong>Inflated auction prices</strong> - teams overpaid for established players who then regressed,
+                or (3) <strong>Injury plague</strong> - key assets got hurt, tanking values. Only elitebandit, Dzel45, and 7RockFire gained trade value, 
+                meaning the vast majority of teams saw their rosters decline in worth. This wasn't mismanagement—it was a league-wide market correction.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>🎯 Thin Trade Market = Risk Aversion</h3>
+            <p>
+                Just <strong>11 trades</strong> in a 14-team league means <strong>57% of GMs didn't trade at all</strong>. 
+                Meanwhile, the waiver wire (204 claims) and free agency (274 adds) saw <strong>43x more activity</strong> than the trade market.
+                This suggests: (1) valuations don't align between contenders and rebuilders, (2) managers are risk-averse after 2024's volatility,
+                or (3) the playoff race was so tight that no one wanted to weaken their roster mid-season. 
+                The 8 teams with zero trades finished across the entire spectrum (ranks 2, 5, 7-14), showing that <strong>standing pat is viable</strong>.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>🏆 Trade of the Year: 7RockFire's Metcalf Flip</h3>
+            <p>
+                <strong>7RockFire's DK Metcalf trade</strong> (+3,444) stands alone as the season's smartest move. 
+                Sold Metcalf in August when Seattle QB uncertainty loomed, acquired <strong>Jalen Royals</strong> (rookie WR with upside) plus a 2026 1st and 2027 2nd. 
+                This trade hit on multiple levels: (1) sold a declining asset, (2) bought youth, (3) acquired premium draft capital, (4) perfectly timed the market. 
+                Textbook dynasty management: <strong>sell veterans with questions, buy rookies with runway</strong>.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>🎲 The Kittle Gambit: Dzel45's Fleece</h3>
+            <p>
+                <strong>Dzel45 sold George Kittle</strong> for a 2026 1st round pick in November, gaining +3,196 in value. 
+                This is the <strong>"Fleece" Award winner</strong>: traded away an aging TE (Kittle, 32 years old) right before his value tanked, 
+                and acquired a 2026 1st that appreciated as the rookie class hype built. Pure arbitrage: 
+                <strong>sold depreciating asset, bought appreciating asset</strong>. Kittle's value has since plummeted (age + injury concerns), 
+                while 2026 1sts are at all-time highs heading into rookie fever season.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>📊 Trade Activity ≠ Success</h3>
+            <p>
+                <strong>MaliciousKid made ZERO trades</strong> but finished 5th overall (9 wins, playoffs). 
+                <strong>MellowMorello made 4 trades</strong> but lost 53,800 in value and barely scraped into playoffs (8 wins). 
+                The data is clear: <strong>drafting well and holding quality assets works</strong>. 
+                You don't need to be a trade maniac. In fact, three of the top five playoff teams (PTexas, RC1988, MaliciousKid) made ≤1 trade. 
+                Correlation between trade count and GMOTY ranking: <strong>essentially zero</strong>. 
+                Lesson: Focus on the auction/draft, build a solid foundation, don't trade just to trade.
+            </p>
+        </div>
+
+        <div class="insight-item">
+            <h3>🔮 Looking Ahead to 2026</h3>
+            <p>
+                <strong>Future picks are the new currency.</strong> With 17 draft picks traded (4x 2026 1sts, 3x 2027 1sts), 
+                teams are clearly bifurcating: contenders trading picks away, rebuilders stockpiling them. 
+                <strong>elitebandit holds 3+ future 1sts</strong> after selling CMC - positioned to reload through the draft.
+                <strong>Dzel45 and 7RockFire</strong> also accumulated extra picks. Meanwhile, teams like UoohMama and hegotgame90210 traded picks away for proven talent.
+                The 2026 draft will be CRITICAL: teams with 2-3 picks in the top 12 could leapfrog the standings overnight. 
+                Watch for Dzel45, elite, and 7Rock to make serious moves in the rookie draft.
+            </p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <strong>Dynasty GM Analyzer</strong> v2.0 • Powered by KeepTradeCut Historical Data<br>
+        Analysis Methodology: Trade value tracking, roster composition analysis, GMOTY scoring algorithm<br>
+        <em>Note: IDP players have zero KTC value and are not included in value calculations</em><br><br>
+        Generated using historical KTC data (2020-2025) and Sleeper API league data<br>
+        <strong>Ballers University</strong> • 14 Teams • 1QB PPR Best Ball • 2025 Season
+    </div>
+
+</div>
+
+</body>
+</html>
