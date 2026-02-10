@@ -1,0 +1,239 @@
+---
+title: "World Development Data"
+author: "Delroy Nichols"
+date: "2026-02-02"
+output: md_document
+---
+
+# Introduction
+
+1. Introduction
+The relationship between economic resources and fertility is one of the most debated topics in modern demography. Classical economic theory often views children as "normal goods," suggesting that as household resources increase, the demand for children should also rise. However, recent microeconomic literature reveals a more complex, divergent reality in which the impact of wealth depends heavily on housing tenure and age.
+
+1.1 Theoretical Framework: The Wealth Paradox
+Research indicates that for homeowners, rising property values create a "wealth shock" that acts as a financial safety net, increasing the probability of having a child by 16% to 18%. In contrast, for non-owners and adolescents, rising housing costs act as a barrier. Specifically, increased parental housing wealth has been associated with an 18% reduction in the likelihood of teenage birth, suggesting that economic stability improves long-term opportunities that discourage early childbearing.
+
+1.2 Objective of Analysis
+While these micro-level studies focus on individual household wealth, this analysis seeks to understand if these patterns hold at a global, macro-economic level. Using data from the World Development Indicators (WDI), we examine whether Urbanization—a proxy for economic development and higher living costs—mirrors the "divergence" seen in microdata.
+
+1.3 Key Variables & Hypothesis
+We utilize 2022 WDI data to explore three key variables:
+
+Urban Population (%): Our primary independent variable, representing the shift from agrarian to developed economies.
+
+Adolescent Fertility Rate: To test the hypothesis that development acts as a contraceptive for teenagers.
+
+Total Fertility Rate: To observe the aggregate impact of urbanization on family size.
+
+We hypothesize a negative correlation between urbanization and teen pregnancy, consistent with the "opportunity cost" theory observed in the literature. However, the relationship with total fertility remains an open question: does the "wealth shock" of developed nations outweigh the rising costs of urban living?
+
+
+## Methods
+
+
+## Data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+gc()
+
+directory <- "C:/Users/delro/OneDrive/Documents"
+
+setwd(directory)
+```
+
+
+
+
+```{r, echo= FALSE}
+library(readxl)
+
+wdi_data <- read_xlsx("WDI2022.xlsx", sheet = 1)
+wdi_data
+
+urban_thresholds <- quantile(wdi_data$urbanpop, probs = c(0.2, 0.8), na.rm = TRUE)
+
+low_cutoff <- urban_thresholds[1]  # The 20% mark
+high_cutoff <- urban_thresholds[2] # The 80% mark
+
+head(wdi_data)
+
+# Focal Variable
+
+summary(wdi_data$births)
+
+
+
+table(wdi_data$birth_rate)
+```
+
+
+
+
+```{r dataexploration, echo=FALSE}
+
+library(dplyr)
+library(tidyr)
+
+analysis_data <- wdi_data %>%
+  filter(!is.na(urbanpop)) %>%
+  mutate(urban_category = case_when(
+    urbanpop >= high_cutoff ~ "Top 20% (High Urban)",
+    urbanpop <= low_cutoff  ~ "Bottom 20% (Low Urban)",
+    TRUE ~ "Middle"
+  )) %>%
+  filter(urban_category != "Middle") # Keep only the two extreme groups
+
+# ---3. Statistical Analysis (T-Tests) ---
+# We loop through the 3 variables to print t-test results for each
+vars_of_interest <- c("births", "teenpreg", "death")
+
+cat("=== Statistical Comparison Results ===\n")
+for (var in vars_of_interest) {
+  cat(paste("\nAnalyzing:", var, "\n"))
+  
+}
+
+```
+# --- Summary Table---
+
+```{r, echo=FALSE}
+
+# Calculate averages for a quick overview
+summary_table <- analysis_data %>%
+  group_by(urban_category) %>%
+  summarise(
+    Avg_Births = mean(births, na.rm = TRUE),
+    Avg_Teen_Pregnancy =mean(teenpreg, na.rm = TRUE),
+    Avg_Death_Rate = mean(death, na.rm = TRUE),
+    Count_Countries = n()
+  )
+print(summary_table)
+
+```
+
+
+# Empirics
+
+```{r, echo=FALSE}
+
+# Quick look at your focal variable 'births'
+summary(wdi_data$births) 
+
+# Create a binary flag for low birth rate (Example: Replacement rate ~2.1)
+wdi_data$low_birth_flag <- wdi_data$births < 2.1
+table(wdi_data$low_birth_flag)
+
+# Summary Table by Urban Category
+summary_table <- analysis_data %>%
+  group_by(urban_category) %>%
+  summarise(
+    Avg_Births = mean(births, na.rm = TRUE),
+    Avg_Teen_Preg = mean(teenpreg, na.rm = TRUE),
+    Avg_Death_Rate = mean(death, na.rm = TRUE),
+    Count_Countries = n()
+  )
+
+# Print the table nicely
+knitr::kable(summary_table, caption = "Averages by Urbanization Level")
+
+```
+
+
+
+
+
+## Statistical Analysis (T-Tests)
+
+```{r, echo = FALSE}
+
+# ---3. Statistical Analysis (T-Tests) ---
+# We loop through the 3 variables to print t-test results for each
+vars_of_interest <- c("births", "teenpreg", "death")
+
+for (var in vars_of_interest) {
+  cat(paste("\n==============================\n"))
+  cat(paste("TESTING VARIABLE:", var, "\n"))
+  
+  # dynamic formula: value ~ category
+  test_result <- t.test(analysis_data[[var]] ~ analysis_data$urban_category)
+  
+  print(test_result)
+}
+
+```
+
+
+## Visual Bivariate Analysis
+
+
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+library(ggplot2)
+
+
+data_long <- analysis_data %>%
+  select(urban_category, all_of(vars_of_interest)) %>%
+  pivot_longer(cols = all_of(vars_of_interest), names_to = "Indicator", values_to = "Value")
+
+ggplot(data_long, aes(x = urban_category, y = Value, fill = urban_category)) + 
+  geom_boxplot(alpha = 0.7, outlier.shape = 21) +
+  facet_wrap(~Indicator, scales = "free_y") + 
+  theme_minimal() +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(
+    title = "Impact of Urbanization on Fertility & Mortality",
+    subtitle = "Comparing Top 20% vs Bottom 20% Urbanized Countries",
+    y = "Rate / Value",
+    x = ""
+  ) +
+  theme(legend.position = "none")
+    
+
+
+```
+
+## The plots provide strong empirical evidence supporting the "Divergence" theory from our research notes. Specifically, they illustrate how urbanization (a proxy for economic development and housing cost) acts as a contraceptive force.
+
+```{r, echo = FALSE}
+
+library(ggplot2)
+library(ggpubr)
+
+p1 <- ggplot(wdi_data, aes(x = urbanpop, y = births)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_smooth(method = "lm", color = "red") +
+  stat_cor(method = "pearson") +
+  labs(title = "Urbanization vs. Birth Rate", x = "Urban Population (%)", y = "Births per Woman")
+
+p2 <- ggplot(wdi_data, aes(x = urbanpop, y = teenpreg)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  geom_smooth(method = "lm", color = "red") +
+  stat_cor(method = "pearson") +
+  labs(title = "Urbanization vs. Teen Pregnancy", x = "Urban Population (%)", y = "Teen Births (per 1,000)")
+
+p3 <- ggplot(wdi_data, aes(x = births, y = teenpreg)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_smooth(method = "lm", color = "orange") +
+  stat_cor(method = "pearson") +
+  labs(title = "Birth Rate vs. Teen Pregnancy", x = "Total Births", y = "Teen Births")
+
+# Combine plots into one view
+ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
+
+```
+
+### Urbanization vs. Birth Rate (Top Plot) The Result: A moderate negative correlation (R=-0.53). Significance: The P-value (p<2.2e-16) is extremely small, indicating that this relationship is not random and may be statistically significant. Interpretation: As countries become more urbanized (moving from 25% to 75% urban), the average birth rate drops consistently.Connection to your Research: This aligns with the “Renter” hypothesis. In highly urbanized environments, housing costs are typically higher, and space is more constrained. Unlike rural agrarian settings, where children are economic assets (labor), in urban settings, they become “economic liabilities” (high cost of raising). The “substitution effect,” in which high housing costs compete with child-rearing costs, is evident here on a global scale.
+
+
+### Urbanization vs. Teen Pregnancy (Middle Plot)The Result: A moderate negative correlation (R=-0.47).Significance: Also highly significant (p=3.1e-13).Interpretation: As urbanization increases, teen pregnancy decreases.Connection to your Research: This strongly supports your “Teen Divergence” note ($100k increase in wealth is associated with an 18% decline in teen births). Urban areas usually offer better educational and economic opportunities for women. The “opportunity cost” of having a child as a teenager in a city is much higher than in a rural area, leading to delayed childbearing.
+
+### Birth Rate vs. Teen Pregnancy (Bottom Plot) The Result: A very strong positive correlation (R=0.86). Interpretation: Countries with high overall birth rates almost always have high teen pregnancy rates. Why this matters: This suggests that “Teen Pregnancy” is a major driver of “Total Fertility.” If you want to lower the total birth rate, you must address the factors driving teen pregnancy (likely lack of opportunity/wealth). Anomaly Note: Notice the green dots clustering tightly at the low end (bottom left). This is the “Developed World” cluster, characterized by low total fertility and near-zero rates of adolescent pregnancy. This is likely where your “Homeowner Wealth Shock” effect would be hidden, within this specific cluster. Wealthy homeowners might be having slightly more kids, but they are statistically drowned out by the massive global trend of “Development = Fewer Kids.”
+
+### **Summary** The bivariate analysis supports the idea that urbanization is a “fertility depressant.” It acts as a barrier to fertility for the general population (renters/average citizens) and a deterrent for teenagers, overpowering any “wealth shock” fertility boost that might exist for a small subset of wealthy homeowners.
+
+
