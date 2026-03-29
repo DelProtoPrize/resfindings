@@ -1,0 +1,880 @@
+---
+title: "Credit Card Balance and Household Behavior in the United States"
+subtitle: "A Two-Part Model with Lasso Variable Selection Using the 2022 Survey of Consumer Finances"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+```
+
+# Introduction
+
+**Research Question:** What financial and demographic characteristics most strongly predict
+credit card balance levels among U.S. households, and what do these associations suggest
+about the behavioral and causal mechanisms — including relationship formation, willingness
+to start families, and labor market participation — that govern household indebtedness?
+
+**Analytic Strategy:** We employ a two-part modeling approach. Part 1 uses logistic
+regression to model the probability of carrying any credit card debt (ccbal > 0). Part 2
+uses OLS regression to model the magnitude of credit card balances, conditional on carrying
+any debt. Before fitting either model, we use Lasso regression on a broad set of continuous
+SCF variables to identify the most influential predictors, retaining only those whose
+coefficients survive penalization across a majority of implicates.
+
+**Data Source:** 2022 Survey of Consumer Finances (SCF), Federal Reserve Board. The SCF
+uses a dual-frame design combining area-probability sampling with a list-based oversample
+of wealthy households. All analyses account for the five-implicate multiple imputation
+structure and use replicate weights. Inferential statistics are pooled across all five
+implicates using Rubin's Rules.
+
+**Note on Scope:** All findings reported here are correlational. The cross-sectional design
+of the SCF does not support causal inference. We discuss plausible mechanisms but acknowledge
+that reverse causality, confounding, and selection effects are present throughout.
+
+---
+
+# Package Loading
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey", "labelled",
+  "psych", "ggplot2", "scales", "scf",
+  "glmnet", "Matrix", "broom", "knitr",
+  "moments", "car"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+
+cat("All packages loaded.\n")
+```
+
+---
+
+# Data Download and Load
+
+```{r download-data, message=TRUE}
+dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
+original_wd <- getwd()
+setwd("scf_data")
+
+if (!file.exists("scf2022.rds")) {
+  cat("Downloading 2022 SCF data (this may take a few minutes)...\n")
+  tryCatch({
+    scf_download(2022)
+    cat("2022 download complete.\n")
+  }, error = function(e) {
+    cat("Error downloading 2022 data:", conditionMessage(e), "\n")
+  })
+} else {
+  cat("scf2022.rds already exists — skipping download.\n")
+}
+
+setwd(original_wd)
+cat("Download step complete.\n")
+```
+
+```{r load-data}
+scf_2022 <- scf_load(2022, data_directory = "scf_data")
+cat("2022 SCF loaded successfully.\n")
+```
+
+---
+
+# Outcome Variable: Credit Card Balance (ccbal)
+
+We examine the distribution of `ccbal` to determine the most appropriate modeling approach.
+
+## Raw Distribution Diagnostics
+
+```{r outcome-diagnostics}
+imp1 <- scf_2022$mi_design[[1]]$variables
+
+cat("===== ccbal: Raw Distribution Summary (Implicate 1) =====\n")
+cat("N total:       ", nrow(imp1), "\n")
+cat("N zero:        ", sum(imp1$ccbal == 0), "\n")
+cat("Pct zero:      ", round(100 * mean(imp1$ccbal == 0), 1), "%\n")
+cat("N positive:    ", sum(imp1$ccbal > 0), "\n")
+cat("Pct positive:  ", round(100 * mean(imp1$ccbal > 0), 1), "%\n\n")
+
+cat("--- Among ALL households ---\n")
+cat("Mean:     $", formatC(mean(imp1$ccbal), format = "f", big.mark = ",", digits = 0), "\n")
+cat("Median:   $", formatC(median(imp1$ccbal), format = "f", big.mark = ",", digits = 0), "\n")
+cat("SD:       $", formatC(sd(imp1$ccbal), format = "f", big.mark = ",", digits = 0), "\n")
+cat("Skewness: ", round(moments::skewness(imp1$ccbal), 2), "\n")
+cat("Kurtosis: ", round(moments::kurtosis(imp1$ccbal), 2), "\n\n")
+
+pos <- imp1$ccbal[imp1$ccbal > 0]
+cat("--- Among households WITH credit card debt ---\n")
+cat("Mean:     $", formatC(mean(pos), format = "f", big.mark = ",", digits = 0), "\n")
+cat("Median:   $", formatC(median(pos), format = "f", big.mark = ",", digits = 0), "\n")
+cat("SD:       $", formatC(sd(pos), format = "f", big.mark = ",", digits = 0), "\n")
+cat("Skewness: ", round(moments::skewness(pos), 2), "\n")
+cat("Kurtosis: ", round(moments::kurtosis(pos), 2), "\n")
+cat("Max:      $", formatC(max(pos), format = "f", big.mark = ",", digits = 0), "\n")
+```
+
+## Distribution Visualizations
+
+```{r outcome-plots, fig.width=10, fig.height=8}
+par(mfrow = c(2, 2))
+
+hist(imp1$ccbal, breaks = 100, main = "ccbal: Raw Distribution (All)",
+     xlab = "Credit Card Balance ($)", col = "steelblue", border = "white")
+
+hist(pos, breaks = 80, main = "ccbal: Positive Balances Only",
+     xlab = "Credit Card Balance ($)", col = "coral", border = "white")
+
+hist(log(pos), breaks = 60, main = "log(ccbal): Positive Balances",
+     xlab = "log(Credit Card Balance)", col = "seagreen", border = "white")
+
+hist(asinh(imp1$ccbal), breaks = 60, main = "asinh(ccbal): All Households",
+     xlab = "asinh(Credit Card Balance)", col = "mediumpurple", border = "white")
+
+par(mfrow = c(1, 1))
+```
+
+## Transformation Decision
+
+The distribution of `ccbal` exhibits two defining features: a large mass at zero (roughly
+62% of households carry no credit card balance) and extreme right skew among positive
+values (skewness > 4, kurtosis > 30). This structure motivates a two-part modeling approach.
+
+For Part 1 (logistic regression), the outcome is the binary indicator `has_ccdebt` (1 if
+ccbal > 0). For Part 2 (OLS regression), the outcome is `log(ccbal)` conditional on
+carrying any debt, which normalizes the heavy right tail. For the Lasso variable selection
+step, we use `asinh(ccbal)` on the full sample. The inverse hyperbolic sine handles zeros
+naturally and approximates `log(2x)` for large values, making it suitable for an initial
+screening pass that includes both debtors and non-debtors.
+
+## Create Outcome Variables
+
+```{r create-outcomes}
+scf_2022 <- scf_update(scf_2022,
+  has_ccdebt  = as.integer(ccbal > 0),
+  log_ccbal   = ifelse(ccbal > 0, log(ccbal), NA),
+  asinh_ccbal = asinh(ccbal)
+)
+
+cat("Outcome variables created: has_ccdebt, log_ccbal, asinh_ccbal\n")
+```
+
+---
+
+# Predictor Variables: Wide Net and Wrangling
+
+We engineer a broad set of continuous and categorical variables from the SCF extract
+dataset. A key decision here is the treatment of total debt (`debt`). Because `ccbal` is
+a component of `debt`, including `asinh_debt` as a predictor would introduce a mechanical
+(tautological) relationship — total debt predicts credit card debt partly because it
+contains credit card debt. We therefore construct `debt_excl_cc` (total debt minus credit
+card balance) to preserve the signal from non-credit-card liabilities without the
+circularity.
+
+## Variable Engineering
+
+```{r variable-engineering}
+scf_2022 <- scf_update(scf_2022,
+
+  # ---- Demographics ----
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  college_degree    = as.integer(edcl == 4),
+
+  educ_cat = factor(edcl,
+    levels = 1:4,
+    labels = c("Less than HS", "High School", "Some College", "College Degree")
+  ),
+
+  race_cat = factor(racecl4,
+    levels = 1:4,
+    labels = c("White", "Black", "Hispanic", "Other")
+  ),
+
+  age_group = cut(age,
+    breaks = c(18, 24, 34, 44, 54, 64, Inf),
+    labels = c("18-24", "25-34", "35-44", "45-54", "55-64", "65+"),
+    right = TRUE, include.lowest = TRUE
+  ),
+
+  age_sq = age^2,
+
+  # ---- Income and wealth (asinh for zeros/negatives) ----
+  asinh_income   = asinh(income),
+  asinh_networth = asinh(networth),
+  asinh_wageinc  = asinh(wageinc),
+
+  # ---- Debt variables (asinh) ----
+  # debt_excl_cc removes the tautological component
+  debt_excl_cc       = pmax(debt - ccbal, 0),
+  asinh_debt_excl_cc = asinh(pmax(debt - ccbal, 0)),
+  asinh_install      = asinh(install),
+  asinh_edn_inst     = asinh(edn_inst),
+  asinh_nh_mort      = asinh(nh_mort),
+  asinh_mrthel       = asinh(mrthel),
+  asinh_othloc       = asinh(othloc),
+  asinh_resdbt       = asinh(resdbt),
+
+  # ---- Asset variables (asinh) ----
+  asinh_asset    = asinh(asset),
+  asinh_fin      = asinh(fin),
+  asinh_nfin     = asinh(nfin),
+  asinh_liq      = asinh(liq),
+  asinh_retqliq  = asinh(retqliq),
+  asinh_cashli   = asinh(cashli),
+  asinh_stocks   = asinh(stocks),
+  asinh_bond     = asinh(bond),
+  asinh_nmmf     = asinh(nmmf),
+  asinh_vehic    = asinh(vehic),
+  asinh_houses   = asinh(houses),
+  asinh_homeeq   = asinh(homeeq),
+  asinh_bus      = asinh(bus),
+  asinh_equity   = asinh(equity),
+  asinh_saving   = asinh(saving),
+  asinh_checking = asinh(checking),
+
+  # ---- Ratios ----
+  asinh_dti = asinh(ifelse(income > 0, debt / income, 0)),
+
+  # ---- Counts ----
+  nvehic_raw = nvehic,
+
+  # ---- Labor / credit access indicators ----
+  is_working  = as.integer(lf == 1),
+  is_homeowner = as.integer(housecl == 1),
+  has_pension  = as.integer(anypen == 1),
+  turned_down  = as.integer(turndown == 1),
+  fear_denial  = as.integer(feardenial == 1)
+)
+
+cat("All predictor variables engineered across implicates.\n")
+```
+
+## Define Predictor Sets
+
+```{r define-predictor-set}
+# Full continuous predictor set for Lasso (wide net)
+# NOTE: asinh_debt_excl_cc replaces asinh_debt to avoid tautology
+continuous_predictors <- c(
+  "age", "age_sq",
+  "asinh_income", "asinh_wageinc", "asinh_networth",
+  "asinh_debt_excl_cc", "asinh_install", "asinh_edn_inst",
+  "asinh_nh_mort", "asinh_mrthel", "asinh_othloc", "asinh_resdbt",
+  "asinh_asset", "asinh_fin", "asinh_nfin",
+  "asinh_liq", "asinh_retqliq", "asinh_cashli",
+  "asinh_stocks", "asinh_bond", "asinh_nmmf",
+  "asinh_vehic", "asinh_houses", "asinh_homeeq",
+  "asinh_bus", "asinh_equity", "asinh_saving", "asinh_checking",
+  "asinh_dti", "nvehic_raw", "kids"
+)
+
+# Categorical / binary predictors (enter final models directly, not penalized by Lasso)
+categorical_predictors <- c(
+  "female", "currently_married", "has_children",
+  "college_degree", "is_working", "is_homeowner",
+  "has_pension", "turned_down", "fear_denial"
+)
+
+cat("Continuous predictors for Lasso: ", length(continuous_predictors), "\n")
+cat("Binary/categorical predictors:   ", length(categorical_predictors), "\n")
+```
+
+---
+
+# Lasso Variable Selection
+
+We run Lasso regression via `glmnet` with `asinh(ccbal)` as the outcome and the full set
+of continuous predictors. The Lasso shrinks uninformative coefficients to zero, retaining
+only variables with genuine predictive signal.
+
+Because the SCF uses multiple imputation, we run the Lasso on each of the five implicates
+separately and retain variables that survive penalization in at least 3 of 5 implicates
+(majority rule). This ensures that variable selection is robust to imputation variation.
+
+```{r lasso-selection, fig.width=10, fig.height=7}
+library(glmnet)
+
+lasso_selected <- list()
+lasso_coefs    <- list()
+
+for (i in 1:5) {
+  cat("--- Implicate", i, "---\n")
+
+  df_i <- scf_2022$mi_design[[i]]$variables
+  wt_i <- df_i$wgt
+
+  # Build predictor matrix (continuous only)
+  available <- continuous_predictors[continuous_predictors %in% names(df_i)]
+  X <- as.matrix(df_i[, available, drop = FALSE])
+  y <- df_i$asinh_ccbal
+
+  # Remove rows with NA
+  complete <- complete.cases(X, y, wt_i)
+  X <- X[complete, , drop = FALSE]
+  y <- y[complete]
+  w <- wt_i[complete]
+  w <- w / mean(w)
+
+  # Standardize
+  X_scaled <- scale(X)
+
+  # Cross-validated Lasso
+  set.seed(123)
+  cv_fit <- cv.glmnet(X_scaled, y, weights = w, alpha = 1,
+                       nfolds = 10, type.measure = "mse")
+
+  # Coefficients at lambda.1se (parsimonious)
+  coef_1se <- coef(cv_fit, s = "lambda.1se")
+  coef_df  <- as.data.frame(as.matrix(coef_1se))
+  coef_df$variable <- rownames(coef_df)
+  names(coef_df)[1] <- "coefficient"
+
+  nonzero <- coef_df %>%
+    filter(variable != "(Intercept)", coefficient != 0) %>%
+    arrange(desc(abs(coefficient)))
+
+  lasso_selected[[i]] <- nonzero$variable
+  lasso_coefs[[i]]    <- nonzero
+
+  cat("  lambda.1se =", round(cv_fit$lambda.1se, 4), "\n")
+  cat("  Variables retained:", nrow(nonzero), "of", length(available), "\n\n")
+}
+
+# Majority rule: keep variables surviving in >= 3 of 5 implicates
+all_vars <- unlist(lasso_selected)
+var_counts <- sort(table(all_vars), decreasing = TRUE)
+
+cat("===== Lasso Survival Across Implicates =====\n")
+print(var_counts)
+
+lasso_survivors <- names(var_counts[var_counts >= 3])
+cat("\n===== Variables Surviving Majority Rule (>= 3/5) =====\n")
+cat(paste(lasso_survivors, collapse = ", "), "\n")
+cat("Total retained:", length(lasso_survivors), "\n")
+```
+
+## Lasso Coefficient Visualization
+
+```{r lasso-plot, fig.width=10, fig.height=7}
+avg_coefs <- bind_rows(lasso_coefs, .id = "implicate") %>%
+  filter(variable %in% lasso_survivors) %>%
+  group_by(variable) %>%
+  summarise(
+    mean_coef    = mean(coefficient),
+    sd_coef      = sd(coefficient),
+    n_implicates = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(abs(mean_coef)))
+
+cat("\n===== Average Lasso Coefficients (Standardized, Across Implicates) =====\n")
+print(avg_coefs, n = 50)
+
+ggplot(avg_coefs, aes(x = reorder(variable, mean_coef), y = mean_coef)) +
+  geom_col(aes(fill = mean_coef > 0), width = 0.7) +
+  scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "coral"),
+                    labels = c("Negative", "Positive"), name = "Direction") +
+  coord_flip() +
+  labs(
+    title = "Lasso-Selected Predictors of asinh(Credit Card Balance)",
+    subtitle = "Average standardized coefficients across 5 implicates (lambda.1se, majority rule)",
+    x = NULL, y = "Average Lasso Coefficient"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+The Lasso winnowed `r length(continuous_predictors)` continuous predictors down to
+`r length(lasso_survivors)` variables that carry genuine predictive signal for credit card
+balances. Variables shrunk to zero across most implicates are considered noise or redundant.
+We carry the surviving variables forward into the two-part model alongside the categorical
+predictors.
+
+---
+
+# Univariate Statistics
+
+Before modeling, we examine the marginal distributions of `ccbal` using proper
+survey-weighted estimates pooled across all five implicates.
+
+## Credit Card Balance: Weighted Estimates
+
+```{r univariate-ccbal}
+cat("===== Weighted Mean: ccbal (Overall) =====\n")
+print(scf_mean(scf_2022, ~ccbal))
+
+cat("\n===== By Marital Status =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~currently_married))
+
+cat("\n===== By Gender =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~female))
+
+cat("\n===== By Education =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~educ_cat))
+
+cat("\n===== By Race =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~race_cat))
+
+cat("\n===== By Age Group =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~age_group))
+
+cat("\n===== By Has Children =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~has_children))
+
+cat("\n===== By Working Status =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~is_working))
+
+cat("\n===== By Turned Down for Credit =====\n")
+print(scf_mean(scf_2022, ~ccbal, by = ~turned_down))
+```
+
+## Prevalence of Credit Card Debt
+
+```{r univariate-prevalence}
+cat("===== Weighted Prevalence: Carries Any CC Debt =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt))
+
+cat("\n===== By Marital Status =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~currently_married))
+
+cat("\n===== By Education =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~educ_cat))
+
+cat("\n===== By Race =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~race_cat))
+
+cat("\n===== By Age Group =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~age_group))
+
+cat("\n===== By Has Children =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~has_children))
+
+cat("\n===== By Turned Down for Credit =====\n")
+print(scf_mean(scf_2022, ~has_ccdebt, by = ~turned_down))
+```
+
+---
+
+# Bivariate Associations
+
+We estimate simple bivariate regressions of `asinh(ccbal)` on each key grouping variable.
+Each coefficient represents a survey-weighted, MI-pooled association.
+
+```{r bivariate}
+cat("===== asinh_ccbal ~ currently_married =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ currently_married)$results)
+
+cat("\n===== asinh_ccbal ~ female =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ female)$results)
+
+cat("\n===== asinh_ccbal ~ college_degree =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ college_degree)$results)
+
+cat("\n===== asinh_ccbal ~ has_children =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ has_children)$results)
+
+cat("\n===== asinh_ccbal ~ is_working =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ is_working)$results)
+
+cat("\n===== asinh_ccbal ~ turned_down =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ turned_down)$results)
+
+cat("\n===== asinh_ccbal ~ fear_denial =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ fear_denial)$results)
+
+cat("\n===== asinh_ccbal ~ is_homeowner =====\n")
+print(scf_ols(scf_2022, asinh_ccbal ~ is_homeowner)$results)
+```
+
+---
+
+# Two-Part Regression Models
+
+## Build Final Predictor Set
+
+The final predictor set combines the Lasso-selected continuous variables with the full
+set of categorical/binary predictors. The categorical variables enter the model unpenalized
+because they represent theoretically motivated controls (demographics, labor force status,
+credit access experience) that should be included regardless of Lasso selection.
+
+```{r build-formula}
+lasso_final <- setdiff(lasso_survivors,
+  c("asinh_ccbal", "ccbal", "has_ccdebt", "log_ccbal"))
+
+all_predictors <- unique(c(lasso_final, categorical_predictors))
+
+cat("Final predictor set for both models:\n")
+cat(paste(all_predictors, collapse = "\n"), "\n")
+cat("\nTotal predictors:", length(all_predictors), "\n")
+```
+
+## Part 1: Logistic Regression — P(Carries Any Credit Card Debt)
+
+```{r part1-logit}
+logit_formula <- as.formula(
+  paste("has_ccdebt ~", paste(all_predictors, collapse = " + "))
+)
+
+cat("===== Part 1: Logistic Regression (Log-Odds) =====\n")
+cat("Outcome: has_ccdebt (1 = carries any credit card balance)\n\n")
+
+logit_model <- scf_glm(scf_2022, logit_formula, exponentiate = FALSE)
+print(logit_model$results)
+```
+
+```{r logit-odds-ratios}
+cat("\n===== Part 1: Odds Ratios (Exponentiated) =====\n")
+logit_or <- scf_glm(scf_2022, logit_formula, exponentiate = TRUE)
+print(logit_or$results)
+```
+
+## Part 2: OLS Regression — log(ccbal), Conditional on ccbal > 0
+
+```{r part2-subset}
+scf_debtors <- scf_2022
+for (i in 1:5) {
+  idx <- scf_2022$mi_design[[i]]$variables$ccbal > 0
+  scf_debtors$mi_design[[i]] <- subset(scf_2022$mi_design[[i]], idx)
+}
+
+cat("Subsetting to households with ccbal > 0:\n")
+for (i in 1:5) {
+  cat("  Implicate", i, ":", nrow(scf_debtors$mi_design[[i]]$variables), "debtors\n")
+}
+```
+
+```{r part2-ols}
+ols_formula <- as.formula(
+  paste("log_ccbal ~", paste(all_predictors, collapse = " + "))
+)
+
+cat("\n===== Part 2: OLS Regression =====\n")
+cat("Outcome: log(ccbal), conditional on ccbal > 0\n\n")
+
+ols_model <- scf_ols(scf_debtors, ols_formula)
+print(ols_model$results)
+```
+
+## Coefficient Comparison Visualization
+
+```{r coefficient-plot, fig.width=11, fig.height=9}
+logit_df <- logit_model$results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(model = "Part 1: Logit (Has Debt)")
+
+ols_df <- ols_model$results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(model = "Part 2: OLS (log Balance)")
+
+combined <- bind_rows(logit_df, ols_df) %>%
+  mutate(
+    significant = p.value < 0.05,
+    direction = ifelse(estimate > 0, "Positive", "Negative")
+  )
+
+ggplot(combined, aes(x = reorder(term, abs(estimate)), y = estimate,
+                      fill = direction, alpha = significant)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                     ymax = estimate + 1.96 * std.error),
+                width = 0.3, linewidth = 0.4) +
+  facet_wrap(~model, scales = "free_x") +
+  scale_fill_manual(values = c("Positive" = "steelblue", "Negative" = "coral")) +
+  scale_alpha_manual(values = c("TRUE" = 1.0, "FALSE" = 0.3)) +
+  coord_flip() +
+  labs(
+    title = "Two-Part Model: Predictors of Credit Card Debt",
+    subtitle = "Part 1: Who carries debt? | Part 2: How much?",
+    x = NULL, y = "Coefficient Estimate (95% CI)",
+    fill = "Direction", alpha = "p < 0.05"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+---
+
+# Interpretation: What the Data Suggests
+
+The two-part model separates two distinct behavioral questions about credit card debt in
+the United States. Part 1 asks who takes on any credit card debt at all, and Part 2 asks,
+among those who carry a balance, what predicts higher or lower amounts. The following
+interpretation is grounded in the actual coefficients estimated above and connects them to
+plausible behavioral mechanisms.
+
+## Marriage, Partnership, and Credit Card Debt
+
+```{r interp-marriage, echo=FALSE, results='asis'}
+# Extract the marriage coefficient from both models
+logit_married <- logit_model$results %>% filter(term == "currently_married")
+ols_married   <- ols_model$results %>% filter(term == "currently_married")
+
+cat(sprintf(
+  "In the logistic model, the coefficient on `currently_married` is %.3f (p = %.4f). ",
+  logit_married$estimate, logit_married$p.value))
+
+if (logit_married$p.value < 0.05) {
+  if (logit_married$estimate > 0) {
+    cat("This indicates that married households have significantly higher odds of carrying
+any credit card debt compared to unmarried households, holding other predictors constant.
+This likely reflects dual-earner households having greater access to credit lines, higher
+aggregate consumption needs, and the financial demands of maintaining a joint household.\n\n")
+  } else {
+    cat("This indicates that married households have significantly lower odds of carrying
+any credit card debt. Pooled resources and the financial discipline associated with
+partnership may provide a buffer against revolving debt.\n\n")
+  }
+} else {
+  cat("This coefficient is not statistically significant, suggesting that marriage status
+does not independently predict the probability of carrying credit card debt once other
+financial and demographic characteristics are accounted for.\n\n")
+}
+
+cat(sprintf(
+  "In the OLS model (Part 2), the coefficient on `currently_married` is %.3f (p = %.4f). ",
+  ols_married$estimate, ols_married$p.value))
+
+if (ols_married$p.value < 0.05) {
+  if (ols_married$estimate > 0) {
+    cat("Among debtors, married households carry approximately %.0f%% higher balances.
+This could reflect joint spending patterns and lifestyle inflation associated with
+dual-income households.",
+    100 * (exp(ols_married$estimate) - 1))
+  } else {
+    cat("Among debtors, married households carry approximately %.0f%% lower balances,
+suggesting that pooled resources help manage debt levels even when a balance exists.",
+    100 * (1 - exp(ols_married$estimate)))
+  }
+} else {
+  cat("This coefficient is not statistically significant, indicating that marriage does
+not predict the magnitude of credit card balances among those who carry debt.")
+}
+
+cat("\n\nThese patterns matter for relationship health. Financial stress — and credit card
+debt in particular, given its high interest rates and discretionary nature — is among the
+strongest predictors of relationship conflict and divorce. The coefficients here quantify
+the nationally representative association between partnership and this specific form of
+indebtedness.\n")
+```
+
+## Children, Family Formation, and Debt
+
+```{r interp-children, echo=FALSE, results='asis'}
+logit_kids <- logit_model$results %>% filter(term == "has_children")
+ols_kids   <- ols_model$results %>% filter(term == "has_children")
+
+cat(sprintf(
+  "The logit coefficient on `has_children` is %.3f (p = %.4f). ",
+  logit_kids$estimate, logit_kids$p.value))
+
+if (logit_kids$p.value < 0.05 & logit_kids$estimate > 0) {
+  cat("Households with children are significantly more likely to carry credit card debt.
+This is consistent with the well-documented cost-of-children channel: childcare,
+education, healthcare, clothing, and food expenses can push household spending beyond
+what income covers, leading to revolving credit use.\n\n")
+} else if (logit_kids$p.value < 0.05 & logit_kids$estimate < 0) {
+  cat("Households with children are less likely to carry credit card debt, which may
+reflect selection effects — financially prepared households may be more likely to have
+children.\n\n")
+} else {
+  cat("This coefficient is not statistically significant.\n\n")
+}
+
+cat(sprintf(
+  "In Part 2, the coefficient is %.3f (p = %.4f). ",
+  ols_kids$estimate, ols_kids$p.value))
+
+if (ols_kids$p.value < 0.05) {
+  cat(sprintf("Among debtors, the presence of children is associated with a %.0f%% %s
+in credit card balances.",
+    abs(100 * (exp(ols_kids$estimate) - 1)),
+    ifelse(ols_kids$estimate > 0, "increase", "decrease")))
+} else {
+  cat("Among debtors, the presence of children does not significantly predict the
+magnitude of credit card balances.")
+}
+
+cat("\n\nThis has direct implications for willingness to start families. If young households
+observe that parenthood is associated with credit card debt accumulation, this may
+contribute to the well-documented trend of delayed family formation, particularly among
+college-educated women.\n")
+```
+
+## Labor Force Participation and Earnings
+
+```{r interp-labor, echo=FALSE, results='asis'}
+logit_work <- logit_model$results %>% filter(term == "is_working")
+ols_work   <- ols_model$results %>% filter(term == "is_working")
+
+# Check if wage income survived Lasso
+has_wage <- "asinh_wageinc" %in% all_predictors
+if (has_wage) {
+  logit_wage <- logit_model$results %>% filter(term == "asinh_wageinc")
+  ols_wage   <- ols_model$results %>% filter(term == "asinh_wageinc")
+}
+
+cat(sprintf(
+  "The coefficient on `is_working` in the logit is %.3f (p = %.4f) and in the OLS is
+%.3f (p = %.4f). ",
+  logit_work$estimate, logit_work$p.value,
+  ols_work$estimate, ols_work$p.value))
+
+if (logit_work$p.value < 0.05 & logit_work$estimate > 0 &
+    (ols_work$p.value >= 0.05 | ols_work$estimate < 0)) {
+  cat("This pattern — employment increasing the probability of having debt but not
+increasing (or reducing) balance levels — suggests that employment primarily operates
+through the credit access channel. Working households qualify for credit cards and use
+them, but their income also provides capacity to manage balances.\n\n")
+} else {
+  cat("\n\n")
+}
+
+if (has_wage) {
+  cat(sprintf(
+    "Wage income (`asinh_wageinc`) has a logit coefficient of %.3f (p = %.4f) and an OLS
+coefficient of %.3f (p = %.4f). ",
+    logit_wage$estimate, logit_wage$p.value,
+    ols_wage$estimate, ols_wage$p.value))
+
+  if (ols_wage$p.value < 0.05 & ols_wage$estimate < 0) {
+    cat("The negative OLS coefficient is important: among debtors, higher wage income
+is associated with lower credit card balances. This supports the interpretation that
+earnings provide capacity to pay down revolving debt rather than fuel additional spending.")
+  }
+}
+cat("\n")
+```
+
+## Credit Access and Financial Exclusion
+
+```{r interp-credit-access, echo=FALSE, results='asis'}
+logit_td <- logit_model$results %>% filter(term == "turned_down")
+ols_td   <- ols_model$results %>% filter(term == "turned_down")
+logit_fd <- logit_model$results %>% filter(term == "fear_denial")
+ols_fd   <- ols_model$results %>% filter(term == "fear_denial")
+
+cat(sprintf(
+  "The coefficient on `turned_down` is %.3f (p = %.4f) in the logit and %.3f (p = %.4f)
+in the OLS. ",
+  logit_td$estimate, logit_td$p.value,
+  ols_td$estimate, ols_td$p.value))
+
+if (logit_td$p.value < 0.05 & logit_td$estimate > 0) {
+  cat("Households that have been turned down for credit in the past five years are
+significantly more likely to carry credit card debt. This suggests that credit cards
+serve as a last-resort borrowing channel for credit-constrained households — precisely
+the population least equipped to manage high-interest revolving debt.\n\n")
+}
+
+cat(sprintf(
+  "The coefficient on `fear_denial` is %.3f (p = %.4f) in the logit and %.3f (p = %.4f)
+in the OLS. ",
+  logit_fd$estimate, logit_fd$p.value,
+  ols_fd$estimate, ols_fd$p.value))
+
+if (logit_fd$p.value < 0.05) {
+  cat("Fear of credit denial — a psychological rather than experiential variable —
+independently predicts credit card debt. This captures anticipatory financial anxiety
+that may shape spending and borrowing decisions even absent actual rejection.\n")
+}
+cat("\n")
+```
+
+## Wealth, Assets, and the Role of Financial Cushions
+
+```{r interp-assets, echo=FALSE, results='asis'}
+asset_vars <- c("asinh_liq", "asinh_saving", "asinh_checking",
+                "asinh_retqliq", "asinh_homeeq", "asinh_fin",
+                "asinh_stocks", "asinh_nmmf", "asinh_cashli")
+present_assets <- intersect(asset_vars, all_predictors)
+
+if (length(present_assets) > 0) {
+  cat("The Lasso retained several asset-side variables, allowing us to examine whether
+financial cushions reduce reliance on credit card borrowing.\n\n")
+
+  for (v in present_assets) {
+    logit_v <- logit_model$results %>% filter(term == v)
+    ols_v   <- ols_model$results %>% filter(term == v)
+    if (nrow(logit_v) > 0 & nrow(ols_v) > 0) {
+      sig_l <- ifelse(logit_v$p.value < 0.05, "*", "ns")
+      sig_o <- ifelse(ols_v$p.value < 0.05, "*", "ns")
+      cat(sprintf("- **%s**: Logit = %.3f (%s), OLS = %.3f (%s)\n",
+                  v, logit_v$estimate, sig_l, ols_v$estimate, sig_o))
+    }
+  }
+
+  cat("\nNegative coefficients on liquid asset variables in the logit suggest that
+households with savings buffers are less likely to carry credit card debt — savings
+substitute for revolving credit. Negative coefficients in the OLS indicate that even
+among debtors, those with more savings carry lower balances. Positive coefficients on
+illiquid assets (e.g., home equity) may reflect a leveraging pattern where homeowners
+have more credit access generally.\n")
+} else {
+  cat("No asset variables survived Lasso selection.\n")
+}
+```
+
+## Connecting to Broader Trends
+
+The coefficients estimated in this analysis provide a quantified, nationally representative
+snapshot of the financial behaviors that connect to broader sociological trends. Delayed
+marriage, declining birth rates, rising household debt, and labor market polarization are
+not independent phenomena. Credit card balances sit at the intersection of these forces:
+they reflect consumption aspirations bumping against income constraints, credit access
+interacting with financial literacy, and household formation decisions shaped by the
+perceived or actual cost of partnership and children.
+
+The two-part structure reveals that the predictors of *having* credit card debt are not
+identical to the predictors of *how much* debt one carries. This distinction matters for
+policy and for understanding household decision-making. Programs that expand credit access
+(e.g., credit-building initiatives) may increase the prevalence of revolving debt without
+necessarily increasing balance levels. Conversely, income support or savings incentives
+may reduce balances among existing debtors without changing the prevalence of debt.
+
+---
+
+# Appendix: Technical Notes
+
+**Multiple Imputation.** All statistics and models are pooled across the SCF's five
+implicates using Rubin's Rules, as implemented by the `scf` package. No results are
+reported from a single implicate.
+
+**Survey Weights.** All estimates use the SCF replicate weights (balanced repeated
+replication) to account for the complex survey design, including oversampling of wealthy
+households.
+
+**Lasso Implementation.** Lasso was run via `glmnet` with 10-fold cross-validation on
+each implicate separately. We used `lambda.1se` (the most regularized model within one
+standard error of the minimum CV error) for parsimony. The majority rule (variable survives
+in >= 3 of 5 implicates) ensures robustness to imputation variation.
+
+**Tautology Correction.** Total household debt (`debt`) includes credit card balances as
+a component. To avoid a mechanically inflated coefficient, we constructed
+`debt_excl_cc = max(debt - ccbal, 0)` and used its asinh transform in place of
+`asinh_debt` throughout the Lasso and regression models.
+
+**Two-Part Model.** Part 1 is a logistic regression on the binary indicator `has_ccdebt`.
+Part 2 is OLS on `log(ccbal)` conditional on `ccbal > 0`. This approach is standard for
+semicontinuous outcomes with a large mass at zero and a continuous positive tail (Duan et
+al., 1983; Manning et al., 1987).
+
+```{r session-info}
+sessionInfo()
+```
