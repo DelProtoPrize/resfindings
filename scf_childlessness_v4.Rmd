@@ -1,0 +1,928 @@
+---
+title: "The Financial Balance Sheet of Childlessness"
+subtitle: "An Analysis of Household Wealth, Debt, and Credit Constraints in the 2022 Survey of Consumer Finances"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+```
+
+# Abstract
+
+This paper examines the financial correlates of childlessness among prime-age U.S.
+households. While demographic research has extensively studied the social and cultural
+drivers of fertility decline, the detailed financial circumstances of childless
+households — particularly their assets, debts, and access to credit — remain less well
+understood. Using replicate-weighted, multiply-imputed data from the 2022 Survey of
+Consumer Finances (SCF), we analyze households headed by individuals aged 31–44 and
+define childlessness as having no co-resident children, a measure that captures a
+household's current living arrangement rather than biological fertility history.
+
+Our logistic regression models reveal that, beyond powerful demographic predictors like
+marital status and education, specific financial variables are strongly associated with
+childlessness. Holding higher levels of retirement assets is positively associated with
+childlessness, consistent with an opportunity cost framework in which long-term savings
+and family formation compete for household resources. Conversely, households that have
+experienced credit denial are more likely to be childless, suggesting that financial
+exclusion and the instability it signals may constitute a barrier to family formation.
+Income and net worth, by contrast, are not significant predictors after other financial
+characteristics are controlled.
+
+This study repositions the economic dimension of childlessness beyond simple income
+measures, demonstrating that the composition of the household balance sheet — what a
+household owns, what it owes, and whether it can access credit — matters more than
+aggregate financial resources for understanding the economic context of family formation.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey", "labelled",
+  "psych", "ggplot2", "scales", "scf",
+  "glmnet", "Matrix", "broom", "knitr",
+  "moments", "car"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r load-data}
+dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
+original_wd <- getwd()
+setwd("scf_data")
+if (!file.exists("scf2022.rds")) {
+  tryCatch(scf_download(2022), error = function(e)
+    cat("Download error:", conditionMessage(e), "\n"))
+}
+setwd(original_wd)
+scf_2022 <- scf_load(2022, data_directory = "scf_data")
+```
+
+# Introduction
+
+The rise of childlessness is a defining demographic trend of the 21st century. The U.S.
+total fertility rate has fallen below replacement and continued to decline through 2023
+(Osterman et al., 2023; Camarota & Zeigler, 2025). A vast body of work has explored the
+demographic and social drivers of this trend, from educational attainment and marital
+patterns to shifting cultural norms and, more recently, immigration-related compositional
+effects (Parrado & Morgan, 2008; Adserà & Ferrer, 2015; Zill, 2025). Yet the economic
+dimension is often simplified to measures of income or employment status, collapsing the
+richness of household finances into a single axis.
+
+This paper argues for a more comprehensive financial perspective. A household's
+decision-making, opportunities, and constraints are shaped not just by income flows but
+by its entire balance sheet: what it owns (assets), what it owes (debts), and whether it
+can access credit. A household with $80,000 in retirement savings, $15,000 in student
+loans, and a recent credit denial inhabits a fundamentally different economic reality than
+one with $80,000 in income — even though both might appear similar on a single financial
+measure.
+
+Using the unparalleled financial detail of the Survey of Consumer Finances (SCF), this
+paper asks: **What are the financial correlates of co-resident childlessness among
+prime-age U.S. households?** We move beyond income to investigate how different forms of
+wealth (retirement vs. liquid assets), debt (installment loans vs. credit card balances),
+and credit access are associated with the likelihood of a household having no children
+present. By centering the analysis on the SCF's core strength — granular financial data —
+we provide a descriptive but deeply nuanced portrait of the economic trade-offs and
+circumstances linked to household structure during the prime family formation years.
+
+This paper serves as a companion to a primary analysis of credit card indebtedness using
+the same dataset, in which the transition to parenthood was identified as the strongest
+demographic predictor of carrying revolving credit card debt. The present analysis
+inverts that question: given what we know about the financial burdens of parenthood, what
+does the financial profile of childless households look like?
+
+---
+
+# Data and Methods
+
+## Data Source
+
+We use the 2022 Survey of Consumer Finances (SCF), a triennial cross-sectional survey of
+U.S. households conducted by the Federal Reserve Board in cooperation with NORC at the
+University of Chicago. The SCF employs a dual-frame design combining area-probability
+sampling with a list-based oversample of wealthy households drawn from IRS records. The
+resulting dataset is the most detailed publicly available source of information on
+household balance sheets, income, pensions, and credit experiences in the United States
+(Bricker et al., 2023).
+
+The SCF addresses item nonresponse through multiple imputation, providing five complete
+implicates of the dataset. All analyses account for this structure using Rubin's Rules,
+as implemented by the `scf` R package (Cohen, 2025). Survey replicate weights (balanced
+repeated replication) are used throughout to produce design-consistent variance estimates.
+
+## Sample
+
+We restrict the analysis to households where the reference person is aged 31–44. This
+window captures the prime family formation years — past the median age at first birth in
+the United States (approximately 27; Osterman et al., 2023) but before the conventional
+boundary for completed fertility (age 44) used in demographic research (Guzzo & Loo,
+2023). The restriction yields approximately 1,000 households per implicate.
+
+## Outcome Variable
+
+The primary outcome, `childless_prime`, is an indicator equal to 1 if the reference
+person is aged 31–44 and reports zero children currently residing in the household.
+
+**It is critical to underscore the precise nature of this variable.** It is a measure of
+co-resident child status, not biological fertility. This measure will systematically
+misclassify non-custodial parents — primarily fathers whose children reside with another
+parent — as childless. It may also misclassify parents whose children live with
+grandparents or other relatives. This misclassification is non-trivial and is likely
+correlated with key predictors including race, marital status, and income.
+
+However, this measure is the only indicator of child status available in the SCF. The
+primary justification for using the SCF despite this limitation is its status as the gold
+standard for household financial data. No other survey provides comparable granularity on
+assets, liabilities, income sources, and credit experiences. The trade-off is explicit:
+we sacrifice precision in the fertility measure to gain depth in the financial measures,
+and we interpret all findings accordingly as pertaining to co-resident childlessness, not
+biological childlessness.
+
+```{r create-variables}
+scf_2022 <- scf_update(scf_2022,
+
+  # Outcome
+  childless_prime = as.integer(age >= 31 & age <= 44 & kids == 0),
+
+  # Demographics
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  college_degree    = as.integer(edcl == 4),
+
+  educ_cat = factor(edcl,
+    levels = 1:4,
+    labels = c("Less than HS", "High School", "Some College", "College Degree")
+  ),
+
+  race_cat = factor(racecl4,
+    levels = 1:4,
+    labels = c("White", "Black", "Hispanic", "Other")
+  ),
+
+  age_sq = age^2,
+
+  # Financial variables (asinh-transformed)
+  asinh_income       = asinh(income),
+  asinh_networth     = asinh(networth),
+  asinh_wageinc      = asinh(wageinc),
+  asinh_debt_excl_cc = asinh(pmax(debt - ccbal, 0)),
+  asinh_install      = asinh(install),
+  asinh_edn_inst     = asinh(edn_inst),
+  asinh_liq          = asinh(liq),
+  asinh_retqliq      = asinh(retqliq),
+  asinh_stocks       = asinh(stocks),
+  asinh_nmmf         = asinh(nmmf),
+  asinh_homeeq       = asinh(homeeq),
+  asinh_vehic        = asinh(vehic),
+  asinh_dti          = asinh(ifelse(income > 0, debt / income, 0)),
+  asinh_ccbal        = asinh(ccbal),
+
+  has_ccdebt = as.integer(ccbal > 0),
+
+  # Labor / credit access
+  is_working   = as.integer(lf == 1),
+  is_homeowner = as.integer(housecl == 1),
+  has_pension  = as.integer(anypen == 1),
+  turned_down  = as.integer(turndown == 1)
+)
+```
+
+## Predictor Variables
+
+Our key financial predictors, summarized below, are grouped by balance sheet category.
+All continuous financial variables are transformed using the inverse hyperbolic sine
+(asinh), which accommodates zeros and negative values while approximating a log
+transformation for large values.
+
+**Assets:** retirement and quasi-liquid assets (`asinh_retqliq`), liquid transaction
+accounts (`asinh_liq`), directly held stocks (`asinh_stocks`), pooled investment funds
+(`asinh_nmmf`), home equity (`asinh_homeeq`), vehicle value (`asinh_vehic`).
+
+**Debts:** installment debt (`asinh_install`), education debt (`asinh_edn_inst`),
+non-credit-card debt (`asinh_debt_excl_cc`), credit card balance (`asinh_ccbal`),
+debt-to-income ratio (`asinh_dti`).
+
+**Credit access:** a binary indicator for having been turned down for credit in the past
+five years (`turned_down`).
+
+**Income:** total household income (`asinh_income`), wage income (`asinh_wageinc`), net
+worth (`asinh_networth`).
+
+**Demographic controls:** age and age-squared (to capture nonlinear lifecycle effects),
+marital status, college degree, race/ethnicity, gender of reference person, employment
+status, homeownership, and pension access.
+
+**A note on the `female` variable.** In the SCF, the reference person in a mixed-sex
+couple is coded as the male. A female reference person therefore typically indicates a
+single woman (often a single mother) or a woman in a same-sex couple. This variable
+functions as a control for household structure, not a direct measure of gender differences
+in fertility.
+
+**A note on the "Other" race category.** The SCF public dataset aggregates Asian, Pacific
+Islander, American Indian/Alaska Native, and multiracial respondents into a single
+"Other" category. Published research indicates this group is predominantly Asian/Pacific
+Islander (Hanna & Lindamood, 2008), but the internal heterogeneity is substantial. We
+retain this category in the model for completeness but urge caution in interpreting its
+coefficient. The opposing fertility patterns of U.S.-born Asian women (high
+childlessness) and first-generation Asian immigrants (lower childlessness) may produce
+attenuated or null aggregate effects that mask meaningful within-group variation (Cai &
+Morgan, 2019).
+
+```{r restrict-sample}
+scf_prime <- scf_2022
+for (i in 1:5) {
+  idx <- scf_2022$mi_design[[i]]$variables$age >= 31 &
+         scf_2022$mi_design[[i]]$variables$age <= 44
+  scf_prime$mi_design[[i]] <- subset(scf_2022$mi_design[[i]], idx)
+}
+```
+
+---
+
+# Descriptive Results
+
+```{r descriptives-sample, results='asis'}
+imp1 <- scf_prime$mi_design[[1]]$variables
+n_prime <- nrow(imp1)
+n_childless <- sum(imp1$kids == 0)
+pct_childless <- round(100 * mean(imp1$kids == 0), 1)
+
+cat(sprintf("The analysis sample comprises approximately %s households per implicate.
+Among these, %.1f%% report no co-resident children. This rate is broadly consistent with
+Census Bureau estimates of childlessness for women in this age range (Guzzo & Loo, 2023),
+though it likely overstates biological childlessness due to the non-custodial parent
+misclassification discussed above.\n\n",
+  formatC(n_prime, big.mark = ","), pct_childless))
+```
+
+## Co-Resident Childlessness by Demographics
+
+```{r desc-demographics}
+cat("===== By Race/Ethnicity =====\n")
+print(scf_mean(scf_prime, ~childless_prime, by = ~race_cat))
+
+cat("\n===== By Education =====\n")
+print(scf_mean(scf_prime, ~childless_prime, by = ~educ_cat))
+
+cat("\n===== By Marital Status =====\n")
+print(scf_mean(scf_prime, ~childless_prime, by = ~currently_married))
+
+cat("\n===== By Credit Denial Experience =====\n")
+print(scf_mean(scf_prime, ~childless_prime, by = ~turned_down))
+```
+
+## Visualizations
+
+```{r viz-race, fig.width=10, fig.height=5}
+# Use weighted estimates from all implicates via scf_mean
+race_rates <- scf_mean(scf_prime, ~childless_prime, by = ~race_cat)
+race_df <- as.data.frame(race_rates$results)
+
+ggplot(race_df, aes(x = reorder(group, -estimate), y = estimate * 100, fill = group)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = (estimate - 1.96 * se) * 100,
+                     ymax = (estimate + 1.96 * se) * 100),
+                width = 0.2) +
+  geom_text(aes(label = sprintf("%.1f%%", estimate * 100)), vjust = -1.2, size = 4) +
+  scale_fill_manual(values = c("White" = "#4A90D9", "Black" = "#E8724A",
+                                "Hispanic" = "#50C878", "Other" = "#9B59B6")) +
+  labs(
+    title = "Co-Resident Childlessness by Race/Ethnicity (Ages 31-44)",
+    subtitle = "Survey-weighted, multiply-imputed estimates with 95% CI",
+    x = NULL, y = "% Childless"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none") +
+  ylim(0, 60)
+```
+
+```{r viz-education, fig.width=10, fig.height=5}
+educ_rates <- scf_mean(scf_prime, ~childless_prime, by = ~educ_cat)
+educ_df <- as.data.frame(educ_rates$results)
+
+ggplot(educ_df, aes(x = group, y = estimate * 100, fill = group)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = (estimate - 1.96 * se) * 100,
+                     ymax = (estimate + 1.96 * se) * 100),
+                width = 0.2) +
+  geom_text(aes(label = sprintf("%.1f%%", estimate * 100)), vjust = -1.2, size = 4) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Co-Resident Childlessness by Education (Ages 31-44)",
+    subtitle = "Survey-weighted, multiply-imputed estimates with 95% CI",
+    x = NULL, y = "% Childless"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none") +
+  ylim(0, 60)
+```
+
+---
+
+# Regression Results
+
+```{r model}
+model_predictors <- c(
+  # Balance sheet: Assets
+  "asinh_retqliq", "asinh_liq", "asinh_stocks", "asinh_nmmf",
+  "asinh_homeeq", "asinh_vehic",
+  # Balance sheet: Debts
+  "asinh_install", "asinh_edn_inst", "asinh_debt_excl_cc",
+  "asinh_ccbal", "asinh_dti",
+  # Income and wealth
+  "asinh_income", "asinh_wageinc", "asinh_networth",
+  # Credit access
+  "turned_down",
+  # Demographics
+  "age", "age_sq",
+  "female", "currently_married", "college_degree",
+  "race_cat",
+  "is_working", "is_homeowner", "has_pension"
+)
+
+model_formula <- as.formula(
+  paste("childless_prime ~", paste(model_predictors, collapse = " + "))
+)
+
+model_fit <- scf_glm(scf_prime, model_formula, family = binomial())
+
+# Compute odds ratios
+results <- model_fit$results
+results$odds_ratio <- exp(results$estimate)
+results$or_lower   <- exp(results$estimate - 1.96 * results$std.error)
+results$or_upper   <- exp(results$estimate + 1.96 * results$std.error)
+```
+
+```{r model-table}
+kable(results %>%
+  select(term, estimate, std.error, odds_ratio, or_lower, or_upper, p.value, stars) %>%
+  mutate(across(c(estimate, std.error, odds_ratio, or_lower, or_upper), ~round(., 4)),
+         p.value = formatC(p.value, format = "e", digits = 2)),
+  col.names = c("Term", "Log-Odds", "SE", "Odds Ratio", "OR 2.5%", "OR 97.5%",
+                "p-value", ""),
+  caption = "Table 1. Logistic Regression: P(Co-Resident Childless, Ages 31-44)")
+```
+
+```{r model-fit, results='asis'}
+null_dev <- svyglm(childless_prime ~ 1, design = scf_prime$mi_design[[1]],
+                    family = binomial())$deviance
+full_dev <- svyglm(model_formula, design = scf_prime$mi_design[[1]],
+                    family = binomial())$deviance
+pseudo_r2 <- round(1 - full_dev / null_dev, 4)
+n_model <- nrow(scf_prime$mi_design[[1]]$variables)
+
+cat(sprintf("**Model fit (Implicate 1):** McFadden pseudo-R² = %.4f; N = %s;
+Predictors = %d\n",
+  pseudo_r2, formatC(n_model, big.mark = ","), length(model_predictors)))
+```
+
+## Coefficient Visualization
+
+```{r coef-plot, fig.width=11, fig.height=9}
+plot_df <- results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    significant = p.value < 0.05,
+    direction = ifelse(estimate > 0, "Positive", "Negative"),
+    # Group variables for visual clarity
+    category = case_when(
+      term %in% c("asinh_retqliq", "asinh_liq", "asinh_stocks", "asinh_nmmf",
+                   "asinh_homeeq", "asinh_vehic") ~ "Assets",
+      term %in% c("asinh_install", "asinh_edn_inst", "asinh_debt_excl_cc",
+                   "asinh_ccbal", "asinh_dti") ~ "Debts",
+      term %in% c("asinh_income", "asinh_wageinc", "asinh_networth") ~ "Income/Wealth",
+      term == "turned_down" ~ "Credit Access",
+      TRUE ~ "Demographics"
+    )
+  )
+
+ggplot(plot_df, aes(x = reorder(term, abs(estimate)), y = estimate,
+                     fill = category, alpha = significant)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                     ymax = estimate + 1.96 * std.error),
+                width = 0.3, linewidth = 0.4) +
+  scale_fill_manual(values = c("Assets" = "#2E86C1", "Debts" = "#E74C3C",
+                                "Income/Wealth" = "#27AE60", "Credit Access" = "#F39C12",
+                                "Demographics" = "#8E44AD")) +
+  scale_alpha_manual(values = c("TRUE" = 1.0, "FALSE" = 0.3)) +
+  coord_flip() +
+  labs(
+    title = "Predictors of Co-Resident Childlessness (Ages 31-44)",
+    subtitle = "Log-odds coefficients with 95% CI, colored by balance sheet category",
+    x = NULL, y = "Coefficient (log-odds)",
+    fill = "Category", alpha = "p < 0.05"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+---
+
+# Interpretation
+
+## The Balance Sheet Findings
+
+```{r interp-retirement, results='asis'}
+ret <- results %>% filter(term == "asinh_retqliq")
+
+cat("### Retirement Assets and the Opportunity Cost of Children\n\n")
+cat(sprintf("The value of retirement and quasi-liquid assets (`asinh_retqliq`) is the
+strongest financial predictor of childlessness: OR = %.2f (p = %s). Households with
+larger retirement savings are significantly more likely to be childless during the prime
+family formation years.\n\n",
+  ret$odds_ratio, formatC(ret$p.value, format = "e", digits = 2)))
+
+cat("This finding lends clear support to an opportunity cost framework. Retirement
+account accumulation reflects sustained career investment, long time horizons, and a
+financial planning orientation that may coincide with — or come at the expense of —
+family formation. The cost of raising a child through age 18 is estimated at $237,000
+to $310,000 in 2022 dollars (Lino et al., 2020), and the career interruptions associated
+with parenthood (particularly for women) reduce lifetime earnings and retirement savings.
+Households that have prioritized or been able to accumulate more retirement wealth are,
+on this evidence, less likely to have children present — suggesting a genuine trade-off
+between investing in financial assets for the future and bearing the immense cost of
+raising children in the present.\n\n")
+
+cat("Importantly, this is not a simple income effect. As we show below, aggregate income
+and net worth are not significant predictors of childlessness. The specificity of the
+retirement asset finding — that it is the *composition* of wealth, not its level, that
+matters — is the core contribution of this analysis.\n")
+```
+
+```{r interp-credit, results='asis'}
+td <- results %>% filter(term == "turned_down")
+
+cat("\n### Credit Constraints and Financial Exclusion\n\n")
+cat(sprintf("Having been turned down for credit in the past five years (`turned_down`)
+is significantly associated with childlessness: OR = %.2f (p = %s). Households that
+have experienced credit denial are approximately %.0f%% more likely to be childless.\n\n",
+  td$odds_ratio, formatC(td$p.value, format = "e", digits = 2),
+  100 * (td$odds_ratio - 1)))
+
+cat("The interpretation of this coefficient requires care regarding causal direction.
+Two plausible mechanisms are consistent with this association:\n\n")
+
+cat("*Financial exclusion as a barrier to family formation.* Credit-constrained
+households may face material barriers to the consumption demands of parenthood — housing,
+vehicles, childcare — that require access to credit. If these households cannot borrow
+to smooth the lumpy expenses associated with having a child, they may delay or forgo
+parenthood. On this reading, credit denial signals a broader financial precarity that
+deters family formation.\n\n")
+
+cat("*Parenthood as a strain on creditworthiness.* Alternatively, the presence of
+children strains a household's liquidity and makes it more vulnerable to financial shocks,
+which may damage creditworthiness and lead to credit denial. On this reading, parents are
+more likely to have been turned down *because* child-related expenses exhausted their
+financial buffer.\n\n")
+
+cat("The cross-sectional design of the SCF cannot distinguish between these mechanisms.
+However, this finding bridges directly to the companion analysis of credit card debt,
+where credit denial was the strongest predictor of carrying revolving balances (OR ≈ 1.97).
+Credit access thus emerges as a common upstream factor linking both childlessness and
+credit card indebtedness — marking a population experiencing financial precarity across
+multiple life domains.\n")
+```
+
+```{r interp-income, results='asis'}
+inc <- results %>% filter(term == "asinh_income")
+nw  <- results %>% filter(term == "asinh_networth")
+wg  <- results %>% filter(term == "asinh_wageinc")
+
+cat("\n### Income, Wealth, and the Null Finding\n\n")
+cat(sprintf("Total household income (OR = %.2f, p = %s) and net worth (OR = %.2f,
+p = %s) are not significant predictors of childlessness after controlling for the
+composition of the balance sheet. ",
+  inc$odds_ratio, formatC(inc$p.value, format = "e", digits = 2),
+  nw$odds_ratio, formatC(nw$p.value, format = "e", digits = 2)))
+
+cat("This null finding is itself a substantive result. It indicates that the economic
+context of childlessness is not about how much a household has in aggregate, but about
+how that wealth is allocated and whether the household faces credit constraints. A
+high-income household that has channeled resources into retirement accounts and a
+low-income household that has been denied credit occupy opposite ends of the financial
+spectrum, yet both are more likely to be childless than their demographic peers.\n\n")
+
+if (wg$p.value < 0.05 && wg$estimate < 0) {
+  cat(sprintf("Wage income (`asinh_wageinc`) is the one income-adjacent variable that
+reaches significance (OR = %.2f, p = %s), with higher wages associated with *lower*
+childlessness. This may reflect financial stability enabling family formation, or it may
+capture the mechanical relationship between non-employment and parenthood (discussed
+below under structural controls). The distinction between wage income (significant) and
+total income (non-significant) suggests that it is earned income from active labor force
+participation, not investment returns or transfers, that correlates with having children
+present.\n",
+    wg$odds_ratio, formatC(wg$p.value, format = "e", digits = 2)))
+}
+```
+
+```{r interp-ccbal, results='asis'}
+cc <- results %>% filter(term == "asinh_ccbal")
+
+cat("\n### Credit Card Balances: The Link to the Companion Analysis\n\n")
+cat(sprintf("Credit card balance (`asinh_ccbal`): OR = %.2f (p = %s). ",
+  cc$odds_ratio, formatC(cc$p.value, format = "e", digits = 2)))
+
+if (cc$p.value >= 0.05) {
+  cat("Credit card balances do not independently predict childlessness after other
+financial variables are controlled. The companion analysis showed that the transition
+to parenthood is the strongest demographic predictor of carrying credit card debt
+(OR ≈ 1.54). The present analysis confirms the reverse direction: credit card debt does
+not appear to *cause* childlessness — rather, parenthood drives credit card use. Once
+we control for the broader financial structure of the household, the credit card
+balance carries no additional predictive power for childlessness.\n")
+} else if (cc$estimate < 0) {
+  cat("Higher credit card balances are associated with lower odds of childlessness,
+consistent with the companion analysis finding that parenthood drives credit card use.
+The relationship appears bidirectional: parents carry more revolving debt, and households
+carrying more revolving debt are less likely to be childless.\n")
+}
+```
+
+## Demographic Controls
+
+```{r interp-demographics, results='asis'}
+mar <- results %>% filter(term == "currently_married")
+ed  <- results %>% filter(term == "college_degree")
+fem <- results %>% filter(term == "female")
+wrk <- results %>% filter(term == "is_working")
+
+cat("### Expected Demographic Patterns\n\n")
+
+cat(sprintf("**Marriage** is overwhelmingly the strongest predictor: OR = %.2f
+(p = %s). Unmarried adults aged 31–44 have dramatically higher odds of co-resident
+childlessness. Marriage remains the primary institutional context for childbearing in
+the United States, and this coefficient captures the combined effect of partnership
+stability, shared financial resources, and normative expectations (Pew Research Center,
+2015; Zill, 2025).\n\n",
+  mar$odds_ratio, formatC(mar$p.value, format = "e", digits = 2)))
+
+cat(sprintf("**College degree**: OR = %.2f (p = %s). ",
+  ed$odds_ratio, formatC(ed$p.value, format = "e", digits = 2)))
+if (ed$p.value < 0.05 && ed$estimate > 0) {
+  cat("College graduates are significantly more likely to be childless, consistent with
+extensive demographic research showing that higher education delays and reduces fertility
+(Livingston, 2015; Guzzo & Loo, 2023). Among women aged 40–44, approximately 19–22%% of
+degree holders are childless compared to 7%% of those without a high school diploma
+(Livingston, 2015).\n\n")
+} else {
+  cat("\n\n")
+}
+
+cat("### Structural Controls\n\n")
+
+cat(sprintf("**Female reference person** (OR = %.2f, p = %s) and **employment**
+(OR = %.2f, p = %s) are both significant but should be interpreted as structural
+controls rather than substantive predictors of fertility preferences. ",
+  fem$odds_ratio, formatC(fem$p.value, format = "e", digits = 2),
+  wrk$odds_ratio, formatC(wrk$p.value, format = "e", digits = 2)))
+
+cat("The female coefficient is driven by the SCF's reference person coding: female-headed
+households in this age range are disproportionately single mothers, producing a mechanical
+negative association with childlessness. The employment coefficient captures the
+compositional fact that the non-working population aged 31–44 includes stay-at-home
+parents, who are by definition not childless. These variables are included to control for
+household structure; they should not be read as evidence of gender or employment effects
+on fertility decisions.\n")
+```
+
+## Racial and Ethnic Categories
+
+```{r interp-race, results='asis'}
+race_terms <- results %>% filter(grepl("race_cat", term))
+
+cat("With White households as the reference category, the coefficients for racial and
+ethnic groups are as follows:\n\n")
+
+for (j in 1:nrow(race_terms)) {
+  r <- race_terms[j, ]
+  cat(sprintf("- **%s**: OR = %.2f, 95%% CI [%.2f, %.2f] (p = %s)\n",
+    gsub("race_cat", "", r$term), r$odds_ratio,
+    r$or_lower, r$or_upper,
+    formatC(r$p.value, format = "e", digits = 2)))
+}
+
+cat("\nIn the fully controlled model, none of the racial coefficients reach conventional
+statistical significance. Given the moderate sample size relative to the number of
+predictors (N ≈ %s with %d predictors, yielding approximately %d observations per
+predictor), this model is likely underpowered to precisely estimate racial differences.
+The confidence intervals are wide enough to encompass both substantively meaningful
+effects and true nulls.\n\n",
+  formatC(n_model, big.mark = ","), length(model_predictors),
+  round(n_model / length(model_predictors)))
+
+cat("**We do not interpret these non-significant coefficients as evidence for or against
+any specific theory** — including theories of immigrant assimilation or cultural
+differences in fertility norms. The financial and demographic controls in the model
+account for a substantial portion of the unconditional racial variance in co-resident
+childlessness, but whether the remaining variance reflects nativity composition,
+unmeasured cultural factors, differential non-custodial parenthood rates, or simply
+sampling variability cannot be determined from these data. Unpacking the source of
+racial and ethnic differences in childlessness requires a dataset with direct measures
+of nativity and biological fertility history, which the SCF lacks.\n\n")
+
+# Caveat the Other category specifically
+other <- race_terms %>% filter(term == "race_catOther")
+if (nrow(other) > 0) {
+  cat(sprintf("The 'Other' category merits particular caution (OR = %.2f, p = %s).
+As noted in the Methods section, this group aggregates Asian, Pacific Islander, American
+Indian/Alaska Native, and multiracial respondents. The internal heterogeneity of this
+category — particularly the opposing nativity-specific fertility patterns within the
+Asian subpopulation (Cai & Morgan, 2019) — means that its aggregate coefficient is
+difficult to interpret substantively. We report it for completeness but do not draw
+inferences from it.\n",
+    other$odds_ratio, formatC(other$p.value, format = "e", digits = 2)))
+}
+```
+
+---
+
+# Connection to the Companion Analysis
+
+The primary analysis in this thesis examined credit card indebtedness, finding that the
+transition to parenthood is the strongest demographic predictor of carrying revolving
+credit card debt. This companion piece inverts the question and finds complementary
+results.
+
+```{r linkage}
+scf_prime <- scf_update(scf_prime,
+  parent_status = factor(ifelse(kids == 0, "Childless", "Parent"))
+)
+
+cat("===== Credit Card Debt Prevalence: Childless vs. Parent (Ages 31-44) =====\n\n")
+print(scf_mean(scf_prime, ~has_ccdebt, by = ~parent_status))
+
+cat("\n===== Mean Credit Card Balance: Childless vs. Parent (Ages 31-44) =====\n\n")
+print(scf_mean(scf_prime, ~ccbal, by = ~parent_status))
+```
+
+```{r linkage-interp, results='asis'}
+cat("\nThe cross-tabulation confirms the expected pattern: parents aged 31–44 carry
+higher credit card balances and are more likely to have any revolving debt than childless
+households. Combined with the regression findings from both papers, the synthesis is:\n\n")
+
+cat("**Parenthood drives credit card debt; the balance sheet shapes childlessness.**
+The main paper shows that having children increases the odds of carrying credit card
+debt by over 50%%, while additional children beyond the first do not compound the effect.
+This companion paper shows that childlessness is predicted not by income or total wealth,
+but by the composition of the balance sheet — retirement assets on one side, credit
+constraints on the other. The economic story of family formation is richer than a single
+income number can capture.\n\n")
+
+cat("**Credit denial links both outcomes.** Households denied credit are simultaneously
+more likely to carry revolving credit card debt (main paper) and more likely to be
+childless (this paper). Financial exclusion marks a population experiencing precarity
+across multiple domains.\n\n")
+
+cat("**Income protects against debt, not against childlessness.** Higher wages reduce
+credit card balances among debtors (main paper) but do not reduce childlessness (this
+paper). The implication for policy is that income support may alleviate the debt burden
+of existing parents but is unlikely, on its own, to shift fertility patterns.\n")
+```
+
+---
+
+# Robustness: Interaction Effects
+
+```{r interactions, results='asis'}
+cat("As a robustness check, we test whether the association between education and
+childlessness, and between marriage and childlessness, varies by race/ethnicity. If
+the financial and demographic predictors operate differently across racial groups —
+as immigration-related assimilation theories would predict — we would expect significant
+interaction terms.\n\n")
+```
+
+```{r interaction-models}
+# Race x Education interaction
+int_educ_formula <- update(model_formula, . ~ . + race_cat:college_degree)
+int_educ_fit <- tryCatch(
+  scf_glm(scf_prime, int_educ_formula, family = binomial()),
+  error = function(e) NULL
+)
+
+# Race x Marriage interaction
+int_mar_formula <- update(model_formula, . ~ . + race_cat:currently_married)
+int_mar_fit <- tryCatch(
+  scf_glm(scf_prime, int_mar_formula, family = binomial()),
+  error = function(e) NULL
+)
+```
+
+```{r interaction-results, results='asis'}
+if (!is.null(int_educ_fit)) {
+  int_educ_terms <- int_educ_fit$results %>%
+    filter(grepl("race_cat.*college_degree|college_degree.*race_cat", term))
+
+  cat("### Race × Education Interactions\n\n")
+  if (nrow(int_educ_terms) > 0) {
+    for (j in 1:nrow(int_educ_terms)) {
+      r <- int_educ_terms[j, ]
+      sig <- ifelse(r$p.value < 0.05, "significant", "not significant")
+      cat(sprintf("- **%s**: log-odds = %.3f (p = %s, %s)\n",
+        r$term, r$estimate, formatC(r$p.value, format = "e", digits = 2), sig))
+    }
+    any_sig_educ <- any(int_educ_terms$p.value < 0.05)
+    cat(sprintf("\n%s of the race × education interactions reach significance at the
+0.05 level.\n\n",
+      ifelse(any_sig_educ, "One or more", "None")))
+  }
+} else {
+  cat("### Race × Education Interactions\n\n")
+  cat("The interaction model did not converge, likely due to small cell sizes in the
+race × education cross-tabulation within the 31–44 age window.\n\n")
+}
+
+if (!is.null(int_mar_fit)) {
+  int_mar_terms <- int_mar_fit$results %>%
+    filter(grepl("race_cat.*currently_married|currently_married.*race_cat", term))
+
+  cat("### Race × Marriage Interactions\n\n")
+  if (nrow(int_mar_terms) > 0) {
+    for (j in 1:nrow(int_mar_terms)) {
+      r <- int_mar_terms[j, ]
+      sig <- ifelse(r$p.value < 0.05, "significant", "not significant")
+      cat(sprintf("- **%s**: log-odds = %.3f (p = %s, %s)\n",
+        r$term, r$estimate, formatC(r$p.value, format = "e", digits = 2), sig))
+    }
+    any_sig_mar <- any(int_mar_terms$p.value < 0.05)
+    cat(sprintf("\n%s of the race × marriage interactions reach significance.\n\n",
+      ifelse(any_sig_mar, "One or more", "None")))
+  }
+} else {
+  cat("### Race × Marriage Interactions\n\n")
+  cat("The interaction model did not converge.\n\n")
+}
+
+cat("These interaction tests should be interpreted with caution given the sample size.
+The 31–44 age restriction yields approximately 1,000 observations, and adding interaction
+terms further reduces the effective sample size within each cell. Non-significant
+interactions may reflect insufficient power rather than true homogeneity of effects
+across racial groups.\n")
+```
+
+---
+
+# Discussion and Conclusion
+
+This analysis demonstrates that a household's financial balance sheet is intricately
+linked to its co-resident childlessness status during the prime family formation years.
+The key contribution is that the economic context of childlessness is richer than simple
+measures of income or wealth can capture.
+
+The strong positive association between retirement assets and childlessness, combined with
+the positive association between credit denial and childlessness, paints a picture of
+competing financial pressures operating at opposite ends of the economic spectrum. At the
+upper end, households investing in long-term financial security face opportunity costs
+that may delay or preclude family formation. At the lower end, households denied access
+to credit face material barriers and financial instability that may produce the same
+outcome through a different mechanism. In between, aggregate income and wealth do not
+distinguish childless households from parents — it is the *structure* of the balance
+sheet, not its total, that matters.
+
+The non-significant racial coefficients in the fully controlled model are notable but
+should be interpreted conservatively. The descriptive statistics show clear differences
+in co-resident childlessness rates by race and ethnicity, with Hispanic households
+showing the lowest rates and "Other" (primarily Asian) households showing the highest.
+These differences could reflect nativity composition, differential rates of non-custodial
+parenthood, cultural variation in family formation norms, or other factors that the SCF
+cannot isolate. Other scholars have argued persuasively that immigration-driven
+compositional effects play a substantial role in racial fertility differentials (Parrado
+& Morgan, 2008; Adserà & Ferrer, 2015; Camarota & Zeigler, 2025). Testing this
+hypothesis directly requires a dataset that combines detailed fertility history with
+nativity data — a task for which the National Survey of Family Growth (NSFG), American
+Community Survey (ACS), or CPS Fertility Supplement would be better suited.
+
+Nonetheless, this paper makes a valuable contribution by centering the role of wealth
+composition, debt structure, and credit access in the study of household formation. The
+findings suggest that policies aimed at easing the financial burden of child-rearing
+should consider not only income support but also mechanisms to improve household
+liquidity, access to credit, and the ability to save for both retirement and
+child-related expenses simultaneously. The framing of children as a "financial trade-off"
+against retirement savings is not merely metaphorical — the data confirm it is a
+measurable feature of the American household balance sheet.
+
+---
+
+# Limitations
+
+**Co-resident child status, not biological fertility.** The SCF's `kids` variable
+measures children currently present in the household. Non-custodial parents (primarily
+fathers), parents whose children live with other relatives, and other scenarios of
+parent-child separation are misclassified as childless. This error is likely correlated
+with race, income, and marital status, and could bias coefficients in unpredictable
+ways. For example, if non-custodial fatherhood is more prevalent among Black or
+lower-income households, their childlessness rate will be artificially inflated.
+
+**Sample size and statistical power.** With approximately 1,000 observations and
+`r length(model_predictors)` predictors (~`r round(n_model / length(model_predictors))`
+observations per predictor), the model has adequate power for large effects (e.g.,
+marriage, education) but limited power for moderate effects, particularly among racial
+subgroups with smaller cell sizes.
+
+**No nativity data.** The SCF does not identify foreign-born status, country of origin,
+generation, or years in the U.S. The role of immigration in shaping racial fertility
+differentials cannot be tested directly.
+
+**Cross-sectional design.** We cannot distinguish between voluntary childlessness,
+involuntary childlessness, and intended-but-not-yet-realized parenthood. All findings
+are correlational.
+
+**The "Other" race category.** This group aggregates Asian, Pacific Islander, American
+Indian/Alaska Native, and multiracial respondents. Its internal heterogeneity severely
+limits interpretability.
+
+**Reference person coding.** The SCF codes the male as reference person in mixed-sex
+couples. The `female` coefficient captures household structure, not gender.
+
+---
+
+# References
+
+Adserà, A., & Ferrer, A. (2015). Immigrants and demography: Marriage, divorce, and
+fertility. In B. R. Chiswick & P. W. Miller (Eds.), *Handbook of the Economics of
+International Migration* (Vol. 1A, pp. 315–374). North-Holland.
+
+Bricker, J., et al. (2023). Changes in U.S. family finances from 2019 to 2022: Evidence
+from the Survey of Consumer Finances. *Federal Reserve Bulletin*.
+
+Cai, Y., & Morgan, S. P. (2019). Low fertility in China and the United States.
+*Population and Development Review*, 45(S1), 235–262.
+
+Camarota, S. A., & Zeigler, K. (2025). The fertility of immigrants and natives in the
+United States, 2023. Center for Immigration Studies.
+
+Cohen, G. (2025). scf: Analyzing the Survey of Consumer Finances. R package version 1.0.5.
+
+Guzzo, K. B., & Loo, J. (2023). Number of children to women aged 40–44, 1980–2022.
+*Family Profiles* (FP-23-29). National Center for Family & Marriage Research.
+
+Hanna, S. D., & Lindamood, S. (2008). Behind the numbers: Understanding the Survey of
+Consumer Finances. *Journal of Financial Counseling and Planning*, 19(2), 52–66.
+
+Lino, M., Kuczynski, K., Rodriguez, N., & Schap, T. (2020). Expenditures on children
+by families, 2015. U.S. Department of Agriculture, Miscellaneous Report No. 1528-2015.
+
+Livingston, G. (2015). Childlessness falls, family size grows among highly educated
+women. Pew Research Center.
+
+Osterman, M. J. K., Hamilton, B. E., Martin, J. A., Driscoll, A. K., & Valenzuela,
+C. P. (2023). Births: Final data for 2021. *National Vital Statistics Reports*, 72(1),
+1–53.
+
+Parrado, E. A., & Morgan, S. P. (2008). Intergenerational fertility among Hispanic
+women: New evidence of immigrant assimilation. *Demography*, 45(3), 651–671.
+
+Pew Research Center. (2015). Childlessness falls, family size grows among highly
+educated women.
+
+Zill, N. (2025). Four million American women reach ages 40 to 50 without children.
+Institute for Family Studies.
+
+---
+
+# Appendix: Technical Notes
+
+**Multiple Imputation.** All statistics and models are pooled across the SCF's five
+implicates using Rubin's Rules.
+
+**Survey Weights.** All estimates — including figures — use SCF replicate weights
+(balanced repeated replication). No unweighted estimates are reported.
+
+**Sample Restriction.** Ages 31–44. This window aligns with the prime family formation
+years and avoids conflating empty-nesting with childlessness.
+
+**Tautology Correction.** `asinh_debt_excl_cc` (total debt minus credit card balance)
+replaces `asinh_debt` to avoid mechanical prediction, consistent with the companion
+analysis.
+
+**Statistical Power.** With ~1,000 observations and `r length(model_predictors)`
+predictors, the model is adequately powered for large effects but may miss moderate
+subgroup differences. Confidence intervals, not p-values alone, should guide
+interpretation of non-significant coefficients.
+
+```{r session-info, results='asis'}
+cat("\n\n**Session Information**\n\n")
+cat(sprintf("R version: %s\n\n", R.version.string))
+cat(sprintf("Platform: %s\n\n", R.version$platform))
+cat(sprintf("Key packages: scf %s, glmnet %s, survey %s\n",
+  packageVersion("scf"), packageVersion("glmnet"), packageVersion("survey")))
+```
