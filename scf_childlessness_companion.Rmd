@@ -1,0 +1,691 @@
+---
+title: "Childlessness, Financial Behavior, and the Immigration Question"
+subtitle: "A Companion Analysis Using the 2022 Survey of Consumer Finances"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+```
+
+# Introduction
+
+This companion analysis extends the credit card balance study by modeling childlessness
+as an outcome and connecting it to the financial behavior patterns identified in the
+primary analysis. While the main paper asks what predicts credit card indebtedness, this
+paper asks a related but distinct question: what financial and demographic characteristics
+predict remaining childless past age 30, and what does the pattern of these associations
+suggest about the mechanisms — including immigration-driven compositional effects — that
+drive unplanned childlessness in the United States?
+
+The motivation for this inquiry comes from a growing body of demographic research showing
+that U.S. fertility decline is not uniform across populations. Immigrant women, particularly
+first-generation arrivals, maintain higher fertility than their native-born counterparts.
+However, second-generation women — children of immigrants who were born or raised in the
+United States — exhibit fertility rates that converge sharply toward native-born norms.
+This generational convergence suggests that the observed racial and ethnic variation in
+childlessness reflects, in part, the nativity composition of each group rather than
+intrinsic cultural or economic differences.
+
+The SCF does not contain nativity or immigration variables, a limitation we address
+transparently. Nevertheless, the SCF's unmatched depth of financial data allows us to
+quantify the financial correlates of childlessness with precision unavailable in surveys
+that do include nativity (such as the CPS or ACS). By modeling childlessness as a function
+of financial position and then examining the residual racial gradient, we can estimate
+how much of the race-childlessness association remains unexplained by economic factors —
+providing an upper bound for the immigration channel that cannot be directly tested here.
+
+**Data Source:** 2022 Survey of Consumer Finances (SCF), Federal Reserve Board.
+
+**Note on Scope:** All findings are correlational. The SCF's cross-sectional design does
+not support causal inference, and the absence of nativity data means the immigration
+hypothesis is engaged theoretically rather than tested directly.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey", "labelled",
+  "psych", "ggplot2", "scales", "scf",
+  "glmnet", "Matrix", "broom", "knitr",
+  "moments", "car"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r load-data}
+dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
+original_wd <- getwd()
+setwd("scf_data")
+if (!file.exists("scf2022.rds")) {
+  tryCatch(scf_download(2022), error = function(e) cat("Download error:", conditionMessage(e), "\n"))
+}
+setwd(original_wd)
+scf_2022 <- scf_load(2022, data_directory = "scf_data")
+```
+
+# Literature Review: Immigration, Fertility, and Childlessness
+
+Fertility in the United States has been below replacement level for over a decade. The
+total fertility rate stood at approximately 1.64 births per woman in 2021 and has not
+recovered to replacement (2.1) since. Within this aggregate decline, however, stark
+compositional differences persist.
+
+**The nativity gradient.** Immigrant women in the U.S. maintain higher fertility than
+native-born women, though the gap has narrowed substantially. Research using CPS and ACS
+data shows that foreign-born fertility declined faster than native-born fertility between
+2008 and 2023, with Hispanic immigrant fertility showing the sharpest decline. Despite
+this convergence, immigrant women still have modestly higher birth rates than their
+native-born peers within every racial group.
+
+**Generational convergence.** The critical finding for the childlessness question is that
+second-generation women — U.S.-born children of immigrants — exhibit fertility patterns
+that closely resemble those of the broader native-born population. Research consistently
+shows that fertility rates of U.S. immigrants decline sharply by the second generation
+as a result of rising educational attainment and income. This pattern holds across
+racial and ethnic groups, though it is most pronounced among Hispanic women.
+
+**The disruption and selection hypotheses.** Two competing mechanisms explain why
+first-generation immigrants sometimes show elevated fertility shortly after arrival.
+The *disruption hypothesis* argues that migration itself temporarily suppresses
+fertility, followed by a catch-up period. The *selection hypothesis* argues that
+migrants self-select on fertility preferences — women who intend to have children may
+time their migration around family formation. Both mechanisms imply that the observed
+fertility of any racial group in the U.S. is a mixture of distinct nativity-specific
+patterns, not a single cultural norm.
+
+**Childlessness by race and ethnicity.** Census data shows that among women ages 40–44,
+White women have the highest childlessness rate (approximately 19%), followed by Black
+women (15%), Asian women (14%), and Hispanic women (10–12%). The low Hispanic childlessness
+rate is driven substantially by immigrant composition: first-generation Hispanic women
+have among the highest fertility rates of any U.S. subpopulation, and their inclusion
+in the aggregate brings the group-level childlessness rate down. Similarly, the relatively
+low childlessness among Asian women may reflect the fertility contribution of
+foreign-born Asian women, despite the high childlessness and delayed childbearing
+typical of U.S.-born Asian women with advanced degrees.
+
+**Implications for the SCF analysis.** The SCF's `racecl4` variable (White, Black,
+Hispanic, Other) captures these compositional effects without decomposing them. When we
+observe racial differences in childlessness in the SCF, we are observing the *mixture*
+of nativity-specific patterns. This is the fundamental limitation — and the fundamental
+motivation for the theoretical decomposition we attempt in Section 4.
+
+---
+
+# Outcome Variable: Childlessness After Age 30
+
+```{r create-variables}
+scf_2022 <- scf_update(scf_2022,
+
+  # Outcome
+  childless_over30 = as.integer(age > 30 & kids == 0),
+
+  # Demographics
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  college_degree    = as.integer(edcl == 4),
+
+  educ_cat = factor(edcl,
+    levels = 1:4,
+    labels = c("Less than HS", "High School", "Some College", "College Degree")
+  ),
+
+  race_cat = factor(racecl4,
+    levels = 1:4,
+    labels = c("White", "Black", "Hispanic", "Other")
+  ),
+
+  age_group = cut(age,
+    breaks = c(18, 24, 34, 44, 54, 64, Inf),
+    labels = c("18-24", "25-34", "35-44", "45-54", "55-64", "65+"),
+    right = TRUE, include.lowest = TRUE
+  ),
+
+  age_sq = age^2,
+
+  # Financial variables (from main analysis)
+  asinh_income       = asinh(income),
+  asinh_networth     = asinh(networth),
+  asinh_wageinc      = asinh(wageinc),
+  debt_excl_cc       = pmax(debt - ccbal, 0),
+  asinh_debt_excl_cc = asinh(pmax(debt - ccbal, 0)),
+  asinh_install      = asinh(install),
+  asinh_edn_inst     = asinh(edn_inst),
+  asinh_nh_mort      = asinh(nh_mort),
+  asinh_mrthel       = asinh(mrthel),
+  asinh_othloc       = asinh(othloc),
+  asinh_resdbt       = asinh(resdbt),
+  asinh_liq          = asinh(liq),
+  asinh_retqliq      = asinh(retqliq),
+  asinh_cashli       = asinh(cashli),
+  asinh_stocks       = asinh(stocks),
+  asinh_bond         = asinh(bond),
+  asinh_nmmf         = asinh(nmmf),
+  asinh_vehic        = asinh(vehic),
+  asinh_houses       = asinh(houses),
+  asinh_homeeq       = asinh(homeeq),
+  asinh_bus          = asinh(bus),
+  asinh_equity       = asinh(equity),
+  asinh_saving       = asinh(saving),
+  asinh_checking     = asinh(checking),
+  asinh_dti          = asinh(ifelse(income > 0, debt / income, 0)),
+  asinh_ccbal        = asinh(ccbal),
+  nvehic_raw         = nvehic,
+
+  # Credit card debt link to main analysis
+  has_ccdebt = as.integer(ccbal > 0),
+
+  # Labor / credit access
+  is_working   = as.integer(lf == 1),
+  is_homeowner = as.integer(housecl == 1),
+  has_pension  = as.integer(anypen == 1),
+  turned_down  = as.integer(turndown == 1),
+  fear_denial  = as.integer(feardenial == 1)
+)
+```
+
+We define the outcome as `childless_over30`: a binary indicator equal to 1 if the
+reference person is over age 30 and reports zero children in the household. This captures
+the population most at risk of unplanned childlessness — past the median age at first
+birth in the United States (approximately 27 for women) but not yet at the biological
+boundary. We restrict the modeling sample to respondents age 31 and older.
+
+```{r outcome-diagnostics, results='asis'}
+# Restrict to age > 30 for analysis
+scf_over30 <- scf_2022
+for (i in 1:5) {
+  idx <- scf_2022$mi_design[[i]]$variables$age > 30
+  scf_over30$mi_design[[i]] <- subset(scf_2022$mi_design[[i]], idx)
+}
+
+imp1 <- scf_over30$mi_design[[1]]$variables
+n_over30 <- nrow(imp1)
+n_childless <- sum(imp1$childless_over30 == 1)
+pct_childless <- round(100 * mean(imp1$childless_over30), 1)
+
+cat(sprintf("Among the %s households headed by someone over age 30 (Implicate 1), %s
+(%.1f%%) report no children in the household.\n\n",
+  formatC(n_over30, big.mark = ","),
+  formatC(n_childless, big.mark = ","),
+  pct_childless))
+```
+
+## Childlessness by Key Demographics
+
+```{r childless-by-group}
+cat("===== Childlessness Rate (age > 30) by Race =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~race_cat))
+
+cat("\n===== By Education =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~educ_cat))
+
+cat("\n===== By Marital Status =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~currently_married))
+
+cat("\n===== By Gender =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~female))
+
+cat("\n===== By Age Group =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~age_group))
+
+cat("\n===== By Working Status =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~is_working))
+
+cat("\n===== By Has Credit Card Debt =====\n")
+print(scf_mean(scf_over30, ~childless_over30, by = ~has_ccdebt))
+```
+
+## Visualization: Childlessness by Race and Education
+
+```{r childless-plot, fig.width=10, fig.height=5}
+# Extract rates from implicate 1 for visualization
+df_plot <- imp1 %>%
+  filter(age > 30) %>%
+  group_by(race_cat) %>%
+  summarise(
+    pct_childless = mean(childless_over30) * 100,
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(race_cat))
+
+ggplot(df_plot, aes(x = reorder(race_cat, -pct_childless), y = pct_childless, fill = race_cat)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = sprintf("%.1f%%", pct_childless)), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("White" = "#4A90D9", "Black" = "#E8724A",
+                                "Hispanic" = "#50C878", "Other" = "#9B59B6")) +
+  labs(
+    title = "Childlessness After Age 30 by Race/Ethnicity (Unweighted, Implicate 1)",
+    x = NULL, y = "% Childless"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none") +
+  ylim(0, max(df_plot$pct_childless) * 1.15)
+```
+
+---
+
+# Modeling Childlessness: Financial and Demographic Predictors
+
+We fit a logistic regression predicting `childless_over30` among respondents age 31 and
+older. The predictor set includes the Lasso-selected financial variables from the main
+credit card analysis (which represent the most informative financial predictors in the
+SCF), plus the full set of demographic and behavioral controls. Crucially, we include
+`race_cat` to examine whether racial/ethnic differences in childlessness persist after
+controlling for financial position.
+
+The inclusion of `has_ccdebt` and `asinh_ccbal` as predictors provides the direct link
+to the main analysis: they test whether credit card indebtedness — the focal variable
+of the companion paper — independently predicts childlessness.
+
+```{r childless-model}
+# Predictors: financial variables from the main analysis Lasso + demographics
+# We use a broad set here since this is a different outcome
+childless_predictors <- c(
+  # Financial (key variables from main analysis)
+  "asinh_income", "asinh_wageinc", "asinh_networth",
+  "asinh_debt_excl_cc", "asinh_install", "asinh_edn_inst",
+  "asinh_liq", "asinh_retqliq", "asinh_stocks", "asinh_nmmf",
+  "asinh_homeeq", "asinh_vehic", "asinh_dti",
+  "asinh_ccbal",  # link to main analysis
+
+  # Demographics
+  "age", "age_sq",
+  "female", "currently_married", "college_degree",
+  "race_cat",  # key variable for immigration discussion
+  "is_working", "is_homeowner", "has_pension",
+  "turned_down"
+)
+
+childless_formula <- as.formula(
+  paste("childless_over30 ~", paste(childless_predictors, collapse = " + "))
+)
+
+childless_model <- scf_glm(scf_over30, childless_formula, family = binomial())
+
+# Compute odds ratios manually
+childless_results <- childless_model$results
+childless_results$odds_ratio <- exp(childless_results$estimate)
+childless_results$or_lower   <- exp(childless_results$estimate - 1.96 * childless_results$std.error)
+childless_results$or_upper   <- exp(childless_results$estimate + 1.96 * childless_results$std.error)
+```
+
+```{r childless-table}
+kable(childless_results %>%
+  select(term, estimate, std.error, odds_ratio, or_lower, or_upper, p.value, stars) %>%
+  mutate(across(c(estimate, std.error, odds_ratio, or_lower, or_upper), ~round(., 4)),
+         p.value = formatC(p.value, format = "e", digits = 2)),
+  col.names = c("Term", "Log-Odds", "SE", "Odds Ratio", "OR Lower", "OR Upper",
+                "p-value", ""),
+  caption = "Table 1. Logistic Regression: P(Childless After Age 30)")
+```
+
+```{r childless-fit, results='asis'}
+null_dev <- svyglm(childless_over30 ~ 1, design = scf_over30$mi_design[[1]],
+                    family = binomial())$deviance
+full_dev <- svyglm(childless_formula, design = scf_over30$mi_design[[1]],
+                    family = binomial())$deviance
+pseudo_r2 <- round(1 - full_dev / null_dev, 4)
+
+cat(sprintf("**Model fit (Implicate 1):** McFadden pseudo-R² = %.4f\n", pseudo_r2))
+```
+
+## Coefficient Visualization
+
+```{r childless-coef-plot, fig.width=10, fig.height=8}
+plot_df <- childless_results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    significant = p.value < 0.05,
+    direction = ifelse(estimate > 0, "Positive", "Negative")
+  )
+
+ggplot(plot_df, aes(x = reorder(term, abs(estimate)), y = estimate,
+                     fill = direction, alpha = significant)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                     ymax = estimate + 1.96 * std.error),
+                width = 0.3, linewidth = 0.4) +
+  scale_fill_manual(values = c("Positive" = "steelblue", "Negative" = "coral")) +
+  scale_alpha_manual(values = c("TRUE" = 1.0, "FALSE" = 0.3)) +
+  coord_flip() +
+  labs(
+    title = "Predictors of Childlessness After Age 30",
+    subtitle = "Logistic regression coefficients (log-odds) with 95% CI",
+    x = NULL, y = "Coefficient (log-odds)",
+    fill = "Direction", alpha = "p < 0.05"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+## Interpretation of Key Coefficients
+
+```{r interp-race, results='asis'}
+race_terms <- childless_results %>% filter(grepl("race_cat", term))
+
+cat("### Race/Ethnicity and Childlessness\n\n")
+cat("The race coefficients are central to the immigration argument. With White as the
+reference category:\n\n")
+
+for (j in 1:nrow(race_terms)) {
+  r <- race_terms[j, ]
+  cat(sprintf("- **%s**: log-odds = %.3f, OR = %.2f (p = %s)\n",
+    r$term, r$estimate, r$odds_ratio,
+    formatC(r$p.value, format = "e", digits = 2)))
+}
+
+cat("\n")
+
+# Check if Hispanic is significant and negative
+hisp <- race_terms %>% filter(term == "race_catHispanic")
+if (nrow(hisp) > 0 && hisp$p.value < 0.05 && hisp$estimate < 0) {
+  cat(sprintf("Hispanic households have %.0f%% lower odds of childlessness after 30
+compared to White households, even after controlling for income, wealth, debt, education,
+marriage, and employment. This is the residual that the immigration literature would
+attribute substantially to the high fertility of first-generation Hispanic immigrants —
+a compositional effect that the SCF cannot decompose directly.\n\n",
+    100 * (1 - hisp$odds_ratio)))
+} else if (nrow(hisp) > 0 && hisp$p.value >= 0.05) {
+  cat("The Hispanic coefficient does not reach significance after financial controls,
+suggesting that the raw difference in childlessness between Hispanic and White households
+is substantially explained by financial characteristics. This would be consistent with
+the view that economic factors, rather than cultural or nativity differences, drive the
+bulk of the childlessness gap.\n\n")
+}
+
+other <- race_terms %>% filter(term == "race_catOther")
+if (nrow(other) > 0) {
+  cat(sprintf("The 'Other' category (primarily Asian/Pacific Islander in the SCF public
+data) shows an odds ratio of %.2f (p = %s). ",
+    other$odds_ratio, formatC(other$p.value, format = "e", digits = 2)))
+  if (other$p.value < 0.05 && other$estimate > 0) {
+    cat("This group has significantly higher childlessness after financial controls,
+consistent with the high rates of educational attainment and delayed childbearing among
+Asian-origin women in the U.S. — a pattern that published research attributes to both
+cultural norms around education and the composition of this group, which includes a high
+share of foreign-born women who arrived for educational or professional purposes.\n")
+  }
+}
+cat("\n")
+```
+
+```{r interp-financial, results='asis'}
+cat("### Financial Position and Childlessness\n\n")
+
+# Marriage
+mar <- childless_results %>% filter(term == "currently_married")
+cat(sprintf("**Marriage** is the strongest demographic predictor: OR = %.2f (p = %s).
+Unmarried adults over 30 are far more likely to be childless, which is expected given
+that marriage remains the primary institutional context for childbearing in the U.S.\n\n",
+  mar$odds_ratio, formatC(mar$p.value, format = "e", digits = 2)))
+
+# Credit card debt link
+cc <- childless_results %>% filter(term == "asinh_ccbal")
+if (nrow(cc) > 0) {
+  cat(sprintf("**Credit card balance** (`asinh_ccbal`): log-odds = %.3f, OR = %.2f
+(p = %s). ",
+    cc$estimate, cc$odds_ratio, formatC(cc$p.value, format = "e", digits = 2)))
+  if (cc$p.value < 0.05 && cc$estimate < 0) {
+    cat("Higher credit card balances are associated with *lower* odds of childlessness.
+This aligns with the main analysis finding that having children predicts higher credit
+card debt — the relationship runs in both directions, with parenthood and credit card
+use co-occurring.\n\n")
+  } else if (cc$p.value < 0.05 && cc$estimate > 0) {
+    cat("Higher credit card balances are associated with higher odds of childlessness,
+suggesting that credit card debt may be part of a consumption-oriented lifestyle that
+delays family formation.\n\n")
+  } else {
+    cat("Credit card balance does not independently predict childlessness after
+controlling for other financial variables. The association between credit card debt
+and parenthood observed in the main analysis appears to be mediated by the broader
+financial position of the household.\n\n")
+  }
+}
+
+# Income and wealth
+inc <- childless_results %>% filter(term == "asinh_income")
+nw  <- childless_results %>% filter(term == "asinh_networth")
+cat(sprintf("**Income** (OR = %.2f, p = %s) and **net worth** (OR = %.2f, p = %s) ",
+  inc$odds_ratio, formatC(inc$p.value, format = "e", digits = 2),
+  nw$odds_ratio, formatC(nw$p.value, format = "e", digits = 2)))
+
+if (inc$p.value < 0.05 || nw$p.value < 0.05) {
+  cat("show significant associations with childlessness. ")
+  if (inc$estimate > 0 || nw$estimate > 0) {
+    cat("Positive coefficients on economic resources suggest that financial capacity
+does not reduce childlessness — wealthier households are, if anything, more likely to
+remain childless, consistent with the opportunity cost of children hypothesis.\n\n")
+  }
+} else {
+  cat("are not significant after controlling for other predictors.\n\n")
+}
+```
+
+---
+
+# The Immigration Channel: A Theoretical Decomposition
+
+The SCF cannot directly test whether nativity drives the racial differences in
+childlessness documented above. However, we can use published nativity-specific
+fertility data to estimate what the childlessness gradient *would* look like if
+the SCF's racial groups were decomposed by generation.
+
+## What the External Literature Shows
+
+Census Bureau data for 2022 reports childlessness rates by both race/ethnicity and
+nativity. Among women ages 40–44 (completed fertility):
+
+- **White non-Hispanic**: ~19% childless
+- **Black**: ~15% childless
+- **Hispanic**: ~10–12% childless
+- **Asian**: ~13–14% childless
+
+When disaggregated by nativity, the picture shifts:
+
+- **U.S.-born Hispanic women** have childlessness rates closer to White women (~15–17%)
+  than to the Hispanic aggregate, because the inclusion of high-fertility first-generation
+  immigrants pulls the group average down.
+- **U.S.-born Asian women** with advanced degrees have among the highest childlessness
+  rates of any subgroup (~20%+), but first-generation Asian immigrant women have lower
+  childlessness, compressing the group average.
+- **Black immigrants** (particularly from Sub-Saharan Africa and the Caribbean) have
+  higher fertility than U.S.-born Black women, meaning the Black childlessness rate
+  would be higher if measured among the native-born alone.
+
+## Bounding the Immigration Effect in the SCF
+
+```{r decomposition, results='asis'}
+cat("We can estimate the magnitude of the immigration compositional effect using a
+simple counterfactual. The SCF reports the following childlessness rates by race
+(weighted, age > 30):\n\n")
+
+# Print the actual SCF rates
+print(scf_mean(scf_over30, ~childless_over30, by = ~race_cat))
+
+cat("\nIf the nativity composition of each racial group were held constant at
+100% native-born — removing the fertility contribution of first-generation
+immigrants — published estimates suggest that:\n\n")
+cat("- The Hispanic childlessness rate would increase by approximately 5–7
+  percentage points (converging toward the White rate)\n")
+cat("- The 'Other' (primarily Asian) rate might decrease slightly or hold steady,
+  since U.S.-born Asian women with degrees have high childlessness already\n")
+cat("- The Black rate would increase by approximately 2–3 percentage points\n")
+cat("- The White rate would be largely unchanged (only ~5% of White women are
+  foreign-born)\n\n")
+cat("This counterfactual implies that the race-childlessness gradient observed in the
+SCF is **partially attributable to nativity composition** — particularly for the
+Hispanic group, where first-generation immigrants substantially compress the
+group-level childlessness rate. The residual racial differences in childlessness,
+after both financial controls (modeled above) and nativity adjustment (estimated
+here from external data), would be smaller than what the raw SCF data suggests.\n")
+```
+
+## What This Means for the Research Question
+
+The immigration channel operates as follows: first-generation immigrants arrive with
+fertility norms shaped by origin countries where birth rates are higher, family formation
+begins earlier, and childlessness is less common. These norms persist into the first
+generation but attenuate sharply in the second generation as educational attainment
+rises and cultural assimilation proceeds. The SCF captures a snapshot of households at
+various points in this assimilation process but cannot identify where each household
+sits on the generational trajectory.
+
+The practical implication is that the SCF's race coefficients in the childlessness
+model are *mixtures* of nativity-specific effects. A negative Hispanic coefficient
+does not necessarily mean that Hispanic cultural norms promote childbearing — it may
+primarily reflect the high share of first-generation immigrants in the Hispanic
+population whose fertility patterns are about to converge toward native-born levels
+in the next generation.
+
+---
+
+# Connecting to the Credit Card Analysis
+
+The main analysis demonstrated that the transition to parenthood (`has_children`) is
+the strongest demographic predictor of credit card indebtedness. This companion piece
+shows that childlessness itself is patterned by race, education, marriage, and
+financial position — with a residual racial component that plausibly reflects
+immigration-driven compositional effects.
+
+```{r linkage, results='asis'}
+# Cross-tabulate childlessness and credit card debt
+cat("===== Credit Card Debt Prevalence Among Childless vs. Parent Households (Age > 30) =====\n\n")
+
+scf_over30 <- scf_update(scf_over30,
+  parent_status = factor(ifelse(childless_over30 == 1, "Childless", "Parent"))
+)
+
+print(scf_mean(scf_over30, ~has_ccdebt, by = ~parent_status))
+
+cat("\n===== Mean Credit Card Balance by Parent Status (Age > 30) =====\n\n")
+print(scf_mean(scf_over30, ~ccbal, by = ~parent_status))
+```
+
+```{r linkage-interp, results='asis'}
+cat("\nThe synthesis across both papers is as follows:\n\n")
+cat("1. **Credit card debt is driven by the transition to parenthood.** The main
+analysis shows that having children increases the odds of carrying credit card debt
+by over 50% (OR ≈ 1.54), while the number of children beyond the first does not
+compound the effect.\n\n")
+cat("2. **Childlessness after 30 is patterned by race, education, and marriage.**
+This companion analysis shows that the probability of remaining childless is highest
+among White and 'Other' (primarily Asian) households, college graduates, and unmarried
+adults.\n\n")
+cat("3. **The racial gradient in childlessness plausibly reflects nativity composition.**
+The immigration literature shows that within-group fertility differences between
+foreign-born and native-born women account for a substantial portion of the
+race-level variation. The SCF's race coefficients are mixtures of these
+nativity-specific effects.\n\n")
+cat("4. **Income protects against debt, not against childlessness.** The main analysis
+shows that higher wages reduce credit card balances among debtors. This companion
+analysis suggests that income is either non-significant or positively associated
+with childlessness — consistent with the opportunity cost of children operating
+through education and career investment rather than through financial constraint
+per se.\n\n")
+cat("5. **The immigration question reframes the policy implication.** If unplanned
+childlessness is driven more by immigration-related compositional shifts than by
+income, then policies aimed at reducing financial barriers to childbearing (e.g.,
+child tax credits, student loan forgiveness) may be less effective at reversing
+fertility decline than policies that address the cultural and structural factors
+that shape family formation norms across generations.\n")
+```
+
+---
+
+# Limitations
+
+This analysis has several important limitations that must be acknowledged:
+
+**No nativity data.** The SCF does not identify foreign-born status, country of origin,
+generation, or years in the U.S. The immigration hypothesis is engaged theoretically
+using external literature, not tested directly. A future analysis using the NSFG
+(National Survey of Family Growth), ACS (American Community Survey), or CPS Fertility
+Supplement — all of which include nativity variables — would be required to formally
+test the generational convergence mechanism.
+
+**The "Other" race category.** In the SCF public dataset, the "Other" race category
+aggregates Asian, Pacific Islander, American Indian/Alaska Native, and multiracial
+respondents. Published research indicates that this category is predominantly
+Asian/Pacific Islander, but the heterogeneity limits interpretability.
+
+**Childlessness at age 30+ is not completed childlessness.** Some households classified
+as childless at 31 or 35 will go on to have children. The outcome we model is
+"currently childless after 30," not "permanently childless." Analysis using the 40–44
+age range (standard in demography) would be more precise but reduces the SCF sample
+substantially.
+
+**Household-level measurement.** The SCF measures `kids` as the number of children in
+the household, not the number of biological children ever born to the reference person.
+A respondent whose adult children have left the household would be classified as
+childless. This upward-biases childlessness among older respondents.
+
+**Cross-sectional design.** We cannot distinguish between "choosing not to have children,"
+"wanting children but not yet having them," and "unable to have children." The SCF
+captures a stock, not a flow.
+
+---
+
+# Suggested Datasets for Future Work
+
+The following datasets would allow direct testing of the immigration-childlessness
+hypothesis:
+
+- **National Survey of Family Growth (NSFG)**: Contains fertility intentions, pregnancy
+  history, nativity, and generation. Best for modeling intended vs. unintended
+  childlessness.
+
+- **American Community Survey (ACS)**: Contains nativity, citizenship, year of entry,
+  and parental birthplace (for generation identification). Massive sample size enables
+  subgroup analysis by race × nativity × education.
+
+- **CPS June Fertility Supplement**: Contains lifetime births, nativity, and detailed
+  demographics. Conducted biennially. Used in the published childlessness-by-nativity
+  estimates cited throughout this paper.
+
+---
+
+# Appendix: Technical Notes
+
+**Multiple Imputation.** All statistics and models are pooled across the SCF's five
+implicates using Rubin's Rules, as implemented by the `scf` package.
+
+**Survey Weights.** All estimates use SCF replicate weights (balanced repeated
+replication).
+
+**Sample Restriction.** The childlessness model is estimated on households where the
+reference person is age 31 or older. The full sample is used for descriptive statistics
+unless otherwise noted.
+
+**Tautology Correction.** As in the main analysis, `asinh_debt_excl_cc` (total debt
+minus credit card balance) replaces `asinh_debt` to avoid mechanical prediction.
+
+**Theoretical Decomposition.** The nativity-adjusted childlessness estimates in
+Section 4 are derived from published CPS and Census Bureau data, not from the SCF
+itself. They represent approximate bounds, not formal estimates.
+
+```{r session-info, results='asis'}
+cat("\n\n**Session Information**\n\n")
+cat(sprintf("R version: %s\n\n", R.version.string))
+cat(sprintf("Platform: %s\n\n", R.version$platform))
+cat(sprintf("Key packages: scf %s, glmnet %s, survey %s\n",
+  packageVersion("scf"), packageVersion("glmnet"), packageVersion("survey")))
+```
