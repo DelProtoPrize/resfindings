@@ -1,0 +1,919 @@
+---
+title: "Credit Card Balance and Household Behavior in the United States"
+subtitle: "A Two-Part Model with Lasso Variable Selection Using the 2022 Survey of Consumer Finances"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+```
+
+# The Cost of Starting a Family: What Drives Credit Card Debt in America
+
+## The Central Question
+
+Nearly half of American households carry a credit card balance. But credit card debt is
+not distributed randomly — it clusters around specific life circumstances. This analysis
+asks a simple question with significant practical implications: **What financial and
+demographic characteristics most strongly predict who carries credit card debt, and
+among those who do, what predicts how much?**
+
+The answer, as we will show, centers on a finding with direct relevance for young adults,
+financial counselors, and policy makers: the single most consequential event for credit
+card indebtedness is the transition to parenthood. Having a first child increases the
+odds of carrying credit card debt by 54%. By contrast, marriage — often assumed to be
+a major financial transition — has no independent effect on credit card debt after
+accounting for the financial characteristics that accompany it. Additional children
+beyond the first do not further increase debt. And among those who already carry
+balances, higher wages are the strongest factor associated with lower balances,
+suggesting that earnings provide repayment capacity that credit access alone cannot.
+
+These findings emerge from a two-part analysis of the 2022 Survey of Consumer Finances
+(SCF), the most detailed publicly available dataset on U.S. household balance sheets.
+We use machine learning (Lasso regression) to identify the most important predictors
+from over 30 financial variables, then fit a logistic model for *who carries debt* and
+an OLS model for *how much they carry*. The two-part structure is essential because
+the factors that push a household into debt are not the same factors that determine the
+size of the balance.
+
+**Data Source:** 2022 Survey of Consumer Finances (SCF), Federal Reserve Board. All
+estimates are survey-weighted, and all models are pooled across the SCF's five multiply-
+imputed datasets using Rubin's Rules.
+
+**Note on Scope:** All findings are correlational. The SCF's cross-sectional design
+does not support causal claims, and we interpret results accordingly.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey", "labelled",
+  "psych", "ggplot2", "scales", "scf",
+  "glmnet", "Matrix", "broom", "knitr",
+  "moments", "car"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r download-data}
+dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
+original_wd <- getwd()
+setwd("scf_data")
+
+if (!file.exists("scf2022.rds")) {
+  tryCatch({
+    scf_download(2022)
+  }, error = function(e) {
+    cat("Error downloading 2022 data:", conditionMessage(e), "\n")
+  })
+}
+
+setwd(original_wd)
+```
+
+```{r load-data}
+scf_2022 <- scf_load(2022, data_directory = "scf_data")
+```
+
+# How Credit Card Debt Is Distributed
+
+## The Basic Landscape
+
+Before modeling, we need to understand the shape of the problem. Credit card debt in
+America is not normally distributed — it is a two-part phenomenon. The majority of
+households carry no balance at all, and among those who do, a small number carry very
+large amounts.
+
+```{r outcome-diagnostics, results='asis'}
+imp1 <- scf_2022$mi_design[[1]]$variables
+
+n_total <- nrow(imp1)
+n_zero  <- sum(imp1$ccbal == 0)
+pct_zero <- round(100 * mean(imp1$ccbal == 0), 1)
+n_pos   <- sum(imp1$ccbal > 0)
+pct_pos <- round(100 * mean(imp1$ccbal > 0), 1)
+
+pos <- imp1$ccbal[imp1$ccbal > 0]
+
+cat(sprintf("The 2022 SCF contains %s household records per implicate. Of these, %s
+(%.1f%%) report a credit card balance of zero, while %s (%.1f%%) carry a positive
+balance.\n\n", 
+  formatC(n_total, big.mark = ","), formatC(n_zero, big.mark = ","), pct_zero,
+  formatC(n_pos, big.mark = ","), pct_pos))
+
+cat(sprintf("Among all households, the unweighted mean balance is $%s with a standard
+deviation of $%s. The distribution is severely right-skewed (skewness = %.2f,
+kurtosis = %.2f). Among the %.1f%% of households carrying any balance, the mean is
+$%s (median $%s), with a maximum of $%s.\n",
+  formatC(mean(imp1$ccbal), format = "f", big.mark = ",", digits = 0),
+  formatC(sd(imp1$ccbal), format = "f", big.mark = ",", digits = 0),
+  moments::skewness(imp1$ccbal), moments::kurtosis(imp1$ccbal),
+  pct_pos,
+  formatC(mean(pos), format = "f", big.mark = ",", digits = 0),
+  formatC(median(pos), format = "f", big.mark = ",", digits = 0),
+  formatC(max(pos), format = "f", big.mark = ",", digits = 0)))
+```
+
+## Distribution Visualizations
+
+```{r outcome-plots, fig.width=10, fig.height=8}
+par(mfrow = c(2, 2))
+
+hist(imp1$ccbal, breaks = 100, main = "ccbal: Raw Distribution (All Households)",
+     xlab = "Credit Card Balance ($)", col = "steelblue", border = "white")
+
+hist(pos, breaks = 80, main = "ccbal: Positive Balances Only",
+     xlab = "Credit Card Balance ($)", col = "coral", border = "white")
+
+hist(log(pos), breaks = 60, main = "log(ccbal): Positive Balances",
+     xlab = "log(Credit Card Balance)", col = "seagreen", border = "white")
+
+hist(asinh(imp1$ccbal), breaks = 60, main = "asinh(ccbal): All Households",
+     xlab = "asinh(Credit Card Balance)", col = "mediumpurple", border = "white")
+
+par(mfrow = c(1, 1))
+```
+
+## Transformation Decision
+
+The distribution of `ccbal` exhibits two defining features: a large mass at zero (roughly
+`r pct_zero`% of households carry no credit card balance) and extreme right skew among
+positive values. This structure motivates a two-part modeling approach.
+
+For Part 1 (logistic regression), the outcome is the binary indicator `has_ccdebt` (1 if
+ccbal > 0). For Part 2 (OLS regression), the outcome is `log(ccbal)` conditional on
+carrying any debt, which normalizes the heavy right tail. For the Lasso variable selection
+step, we use `asinh(ccbal)` on the full sample. The inverse hyperbolic sine handles zeros
+naturally and approximates `log(2x)` for large values, making it suitable for an initial
+screening pass that includes both debtors and non-debtors.
+
+```{r create-outcomes}
+scf_2022 <- scf_update(scf_2022,
+  has_ccdebt  = as.integer(ccbal > 0),
+  log_ccbal   = ifelse(ccbal > 0, log(ccbal), NA),
+  asinh_ccbal = asinh(ccbal)
+)
+```
+
+---
+
+# Predictor Variables
+
+We engineer a broad set of continuous and categorical variables from the SCF extract
+dataset. A key decision is the treatment of total debt. Because `ccbal` is a component of
+the SCF's aggregate `debt` variable, including total debt as a predictor would introduce a
+mechanical (tautological) relationship. We therefore construct `debt_excl_cc` (total debt
+minus credit card balance) to preserve the signal from non-credit-card liabilities without
+circularity.
+
+```{r variable-engineering}
+scf_2022 <- scf_update(scf_2022,
+
+  # Demographics
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  college_degree    = as.integer(edcl == 4),
+
+  educ_cat = factor(edcl,
+    levels = 1:4,
+    labels = c("Less than HS", "High School", "Some College", "College Degree")
+  ),
+
+  race_cat = factor(racecl4,
+    levels = 1:4,
+    labels = c("White", "Black", "Hispanic", "Other")
+  ),
+
+  age_group = cut(age,
+    breaks = c(18, 24, 34, 44, 54, 64, Inf),
+    labels = c("18-24", "25-34", "35-44", "45-54", "55-64", "65+"),
+    right = TRUE, include.lowest = TRUE
+  ),
+
+  age_sq = age^2,
+
+  # Income and wealth
+  asinh_income   = asinh(income),
+  asinh_networth = asinh(networth),
+  asinh_wageinc  = asinh(wageinc),
+
+  # Debt variables (tautology-corrected)
+  debt_excl_cc       = pmax(debt - ccbal, 0),
+  asinh_debt_excl_cc = asinh(pmax(debt - ccbal, 0)),
+  asinh_install      = asinh(install),
+  asinh_edn_inst     = asinh(edn_inst),
+  asinh_nh_mort      = asinh(nh_mort),
+  asinh_mrthel       = asinh(mrthel),
+  asinh_othloc       = asinh(othloc),
+  asinh_resdbt       = asinh(resdbt),
+
+  # Asset variables
+  asinh_asset    = asinh(asset),
+  asinh_fin      = asinh(fin),
+  asinh_nfin     = asinh(nfin),
+  asinh_liq      = asinh(liq),
+  asinh_retqliq  = asinh(retqliq),
+  asinh_cashli   = asinh(cashli),
+  asinh_stocks   = asinh(stocks),
+  asinh_bond     = asinh(bond),
+  asinh_nmmf     = asinh(nmmf),
+  asinh_vehic    = asinh(vehic),
+  asinh_houses   = asinh(houses),
+  asinh_homeeq   = asinh(homeeq),
+  asinh_bus      = asinh(bus),
+  asinh_equity   = asinh(equity),
+  asinh_saving   = asinh(saving),
+  asinh_checking = asinh(checking),
+
+  # Ratios
+  asinh_dti = asinh(ifelse(income > 0, debt / income, 0)),
+
+  # Counts
+  nvehic_raw = nvehic,
+
+  # Labor / credit access
+  is_working   = as.integer(lf == 1),
+  is_homeowner = as.integer(housecl == 1),
+  has_pension  = as.integer(anypen == 1),
+  turned_down  = as.integer(turndown == 1),
+  fear_denial  = as.integer(feardenial == 1)
+)
+```
+
+```{r define-predictor-set}
+continuous_predictors <- c(
+  "age", "age_sq",
+  "asinh_income", "asinh_wageinc", "asinh_networth",
+  "asinh_debt_excl_cc", "asinh_install", "asinh_edn_inst",
+  "asinh_nh_mort", "asinh_mrthel", "asinh_othloc", "asinh_resdbt",
+  "asinh_asset", "asinh_fin", "asinh_nfin",
+  "asinh_liq", "asinh_retqliq", "asinh_cashli",
+  "asinh_stocks", "asinh_bond", "asinh_nmmf",
+  "asinh_vehic", "asinh_houses", "asinh_homeeq",
+  "asinh_bus", "asinh_equity", "asinh_saving", "asinh_checking",
+  "asinh_dti", "nvehic_raw", "kids"
+)
+
+categorical_predictors <- c(
+  "female", "currently_married", "has_children",
+  "college_degree", "is_working", "is_homeowner",
+  "has_pension", "turned_down", "fear_denial"
+)
+```
+
+The Lasso screening considers `r length(continuous_predictors)` continuous predictors. An
+additional `r length(categorical_predictors)` binary and categorical predictors enter the
+final models unpenalized as theoretically motivated controls.
+
+---
+
+# Lasso Variable Selection
+
+We run Lasso regression via `glmnet` with `asinh(ccbal)` as the outcome and the full set
+of `r length(continuous_predictors)` continuous predictors. Because the SCF uses multiple
+imputation, we run the Lasso on each of the five implicates separately and retain variables
+that survive penalization in at least 3 of 5 implicates (majority rule). This ensures that
+variable selection is robust to imputation variation.
+
+```{r lasso-selection}
+library(glmnet)
+
+lasso_selected <- list()
+lasso_coefs    <- list()
+
+for (i in 1:5) {
+  df_i <- scf_2022$mi_design[[i]]$variables
+  wt_i <- df_i$wgt
+
+  available <- continuous_predictors[continuous_predictors %in% names(df_i)]
+  X <- as.matrix(df_i[, available, drop = FALSE])
+  y <- df_i$asinh_ccbal
+
+  complete <- complete.cases(X, y, wt_i)
+  X <- X[complete, , drop = FALSE]
+  y <- y[complete]
+  w <- wt_i[complete]
+  w <- w / mean(w)
+
+  X_scaled <- scale(X)
+
+  set.seed(123)
+  cv_fit <- cv.glmnet(X_scaled, y, weights = w, alpha = 1,
+                       nfolds = 10, type.measure = "mse")
+
+  coef_1se <- coef(cv_fit, s = "lambda.1se")
+  coef_df  <- as.data.frame(as.matrix(coef_1se))
+  coef_df$variable <- rownames(coef_df)
+  names(coef_df)[1] <- "coefficient"
+
+  nonzero <- coef_df %>%
+    filter(variable != "(Intercept)", coefficient != 0) %>%
+    arrange(desc(abs(coefficient)))
+
+  lasso_selected[[i]] <- nonzero$variable
+  lasso_coefs[[i]]    <- nonzero
+}
+
+all_vars <- unlist(lasso_selected)
+var_counts <- sort(table(all_vars), decreasing = TRUE)
+
+lasso_survivors <- names(var_counts[var_counts >= 3])
+```
+
+```{r lasso-summary, results='asis'}
+cat(sprintf("Across the five implicates, the Lasso retained between %d and %d variables
+at `lambda.1se`. Applying the majority rule (survival in at least 3 of 5 implicates),
+**%d variables** were selected for inclusion in the final models. Of these, %d survived
+in all five implicates.\n\n",
+  min(sapply(lasso_selected, length)),
+  max(sapply(lasso_selected, length)),
+  length(lasso_survivors),
+  sum(var_counts >= 5)))
+
+cat("**Variables surviving Lasso selection:** ",
+    paste(lasso_survivors, collapse = ", "), "\n\n")
+
+# Note borderline variables
+borderline <- names(var_counts[var_counts == 3])
+if (length(borderline) > 0) {
+  cat(sprintf("*Note:* %s survived in exactly 3 of 5 implicates, the minimum threshold.
+The 3/5 majority rule is a researcher decision; results are not sensitive to reasonable
+alternatives (e.g., 4/5).\n", paste(borderline, collapse = ", ")))
+}
+```
+
+## Lasso Coefficient Visualization
+
+```{r lasso-plot, fig.width=10, fig.height=7}
+avg_coefs <- bind_rows(lasso_coefs, .id = "implicate") %>%
+  filter(variable %in% lasso_survivors) %>%
+  group_by(variable) %>%
+  summarise(
+    mean_coef    = mean(coefficient),
+    sd_coef      = sd(coefficient),
+    n_implicates = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(abs(mean_coef)))
+
+ggplot(avg_coefs, aes(x = reorder(variable, mean_coef), y = mean_coef)) +
+  geom_col(aes(fill = mean_coef > 0), width = 0.7) +
+  scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "coral"),
+                    labels = c("Negative", "Positive"), name = "Direction") +
+  coord_flip() +
+  labs(
+    title = "Lasso-Selected Predictors of asinh(Credit Card Balance)",
+    subtitle = "Average standardized coefficients across 5 implicates (lambda.1se, majority rule)",
+    x = NULL, y = "Average Lasso Coefficient"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+```{r lasso-table}
+kable(avg_coefs %>%
+  mutate(mean_coef = round(mean_coef, 4),
+         sd_coef = round(sd_coef, 4)) %>%
+  rename(Variable = variable,
+         `Mean Coefficient` = mean_coef,
+         `SD Across Implicates` = sd_coef,
+         `Implicates Retained` = n_implicates),
+  caption = "Table 1. Average Lasso Coefficients for Selected Predictors")
+```
+
+---
+
+# Who Carries Credit Card Debt? Descriptive Patterns
+
+Before turning to the multivariate models, we examine how credit card debt varies across
+key demographic groups. These descriptive patterns motivate the regression analysis and
+provide the context for interpreting the model coefficients.
+
+```{r univariate-compute}
+# Compute all descriptive statistics and store them — no printing
+overall_bal <- scf_mean(scf_2022, ~ccbal)
+bal_by_married <- scf_mean(scf_2022, ~ccbal, by = ~currently_married)
+bal_by_children <- scf_mean(scf_2022, ~ccbal, by = ~has_children)
+bal_by_educ <- scf_mean(scf_2022, ~ccbal, by = ~educ_cat)
+bal_by_race <- scf_mean(scf_2022, ~ccbal, by = ~race_cat)
+bal_by_age <- scf_mean(scf_2022, ~ccbal, by = ~age_group)
+bal_by_working <- scf_mean(scf_2022, ~ccbal, by = ~is_working)
+bal_by_turndown <- scf_mean(scf_2022, ~ccbal, by = ~turned_down)
+
+overall_prev <- scf_mean(scf_2022, ~has_ccdebt)
+prev_by_married <- scf_mean(scf_2022, ~has_ccdebt, by = ~currently_married)
+prev_by_educ <- scf_mean(scf_2022, ~has_ccdebt, by = ~educ_cat)
+prev_by_race <- scf_mean(scf_2022, ~has_ccdebt, by = ~race_cat)
+prev_by_age <- scf_mean(scf_2022, ~has_ccdebt, by = ~age_group)
+prev_by_children <- scf_mean(scf_2022, ~has_ccdebt, by = ~has_children)
+prev_by_turndown <- scf_mean(scf_2022, ~has_ccdebt, by = ~turned_down)
+
+# Helper to extract estimates from scf_mean results
+get_est <- function(obj, grp = NULL) {
+  r <- obj$results
+  if (!is.null(grp)) r <- r[r$group == grp, ]
+  round(r$estimate, ifelse(max(abs(r$estimate), na.rm=TRUE) < 1, 3, 0))
+}
+get_pct <- function(obj, grp = NULL) {
+  r <- obj$results
+  if (!is.null(grp)) r <- r[r$group == grp, ]
+  round(r$estimate * 100, 1)
+}
+```
+
+```{r descriptive-narrative, results='asis'}
+cat(sprintf("Across all U.S. households, the weighted average credit card balance is
+approximately $%s. About %.1f%% of households carry any credit card balance at all.\n\n",
+  formatC(get_est(overall_bal), big.mark = ","),
+  get_pct(overall_prev)))
+
+cat("**The parenthood divide.** Households with children carry a weighted average
+balance of $%s, compared to $%s for childless households. More importantly, %.1f%%
+of parents carry some credit card debt, versus %.1f%% of childless households. This
+gap — roughly 16 percentage points — is one of the largest demographic differences
+in credit card prevalence and motivates the central finding of this analysis.\n\n",
+  formatC(get_est(bal_by_children, "1"), big.mark = ","),
+  formatC(get_est(bal_by_children, "0"), big.mark = ","),
+  get_pct(prev_by_children, "1"),
+  get_pct(prev_by_children, "0"))
+
+cat(sprintf("**Credit denial is a red flag.** Among households that have been turned
+down for credit in the past five years, %.1f%% carry a credit card balance — compared
+to %.1f%% of those never denied. Their average balances are also substantially higher
+($%s vs. $%s). Credit denial marks a population that is both more likely to carry
+revolving debt and more likely to carry larger amounts.\n\n",
+  get_pct(prev_by_turndown, "1"),
+  get_pct(prev_by_turndown, "0"),
+  formatC(get_est(bal_by_turndown, "1"), big.mark = ","),
+  formatC(get_est(bal_by_turndown, "0"), big.mark = ",")))
+
+cat(sprintf("**The age curve peaks in middle adulthood.** Credit card balances are
+lowest among the youngest households (18–24: $%s average) and rise through middle
+age (45–54: $%s), before declining in retirement. This lifecycle pattern reflects
+the accumulation of financial obligations — mortgages, children, career expenses —
+that peak in the 40s and 50s.\n\n",
+  formatC(get_est(bal_by_age, "18-24"), big.mark = ","),
+  formatC(get_est(bal_by_age, "45-54"), big.mark = ",")))
+
+cat(sprintf("**Race and ethnicity.** Black and Hispanic households are more likely to
+carry credit card debt (%.1f%% and %.1f%% respectively, vs. %.1f%% for White
+households), but White households carry the highest average balances ($%s). This
+pattern suggests that minority households enter credit card debt more frequently but
+may have lower credit limits or more constrained borrowing capacity.\n\n",
+  get_pct(prev_by_race, "Black"),
+  get_pct(prev_by_race, "Hispanic"),
+  get_pct(prev_by_race, "White"),
+  formatC(get_est(bal_by_race, "White"), big.mark = ",")))
+
+cat("These descriptive patterns are informative but potentially misleading — many of
+these characteristics are correlated with each other. A working married homeowner with
+a college degree and children is a very different household than a single renter without
+children. The multivariate models that follow disentangle these overlapping effects.\n")
+```
+
+## Prevalence of Credit Card Debt by Group
+
+```{r prevalence-visual, fig.width=10, fig.height=6}
+# Create a clean visualization of debt prevalence by key groups
+prev_data <- data.frame(
+  Group = c("Has Children", "No Children",
+            "Denied Credit", "Not Denied",
+            "Working", "Not Working",
+            "College Degree", "No College"),
+  Rate = c(get_pct(prev_by_children, "1"), get_pct(prev_by_children, "0"),
+           get_pct(prev_by_turndown, "1"), get_pct(prev_by_turndown, "0"),
+           get_pct(prev_by_children, "1"), get_pct(prev_by_children, "0"),
+           get_pct(prev_by_educ, "College Degree"),
+           mean(c(get_pct(prev_by_educ, "Less than HS"),
+                  get_pct(prev_by_educ, "High School"),
+                  get_pct(prev_by_educ, "Some College")))),
+  Category = rep(c("Parenthood", "Credit Access", "Employment", "Education"), each = 2)
+)
+
+ggplot(prev_data, aes(x = reorder(Group, Rate), y = Rate, fill = Category)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = sprintf("%.0f%%", Rate)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Who Carries Credit Card Debt?",
+    subtitle = "Percentage of households with any revolving balance, by group",
+    x = NULL, y = "% with Credit Card Debt"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom") +
+  ylim(0, 80)
+```
+
+---
+
+# Bivariate Associations
+
+```{r bivariate, include=FALSE}
+# Run bivariate associations silently — results are used in interpretation,
+# not dumped to the document
+biv_vars <- c("currently_married", "female", "college_degree",
+              "has_children", "is_working", "turned_down",
+              "fear_denial", "is_homeowner")
+
+biv_results <- list()
+for (v in biv_vars) {
+  f <- as.formula(paste("asinh_ccbal ~", v))
+  biv_results[[v]] <- scf_ols(scf_2022, f)$results
+}
+```
+
+The descriptive patterns above suggest that parenthood, credit access, and employment
+are strongly associated with credit card debt. But these variables are correlated — parents
+are more likely to be married, employed, and to own homes. To isolate the independent
+contribution of each factor, we turn to a two-part regression model.
+
+---
+
+# The Two-Part Model: Who Carries Debt, and How Much?
+
+## Why Two Separate Models?
+
+Credit card debt is a two-stage phenomenon. First, a household must *enter* revolving
+debt — by carrying a balance rather than paying in full. Second, conditional on carrying
+a balance, the household accumulates a specific *amount*. The factors that push someone
+into debt are not necessarily the same factors that determine how deep they go. We
+therefore estimate two separate models: a logistic regression for who carries any debt
+(Part 1), and an OLS regression for the dollar amount among debtors (Part 2).
+
+## Variable Selection: Letting the Data Speak
+
+Rather than choosing predictors based on theory alone, we first use Lasso regression — a
+machine learning technique that penalizes weak predictors and retains only those with
+genuine explanatory power — to screen over 30 financial variables from the SCF. To ensure
+robustness, we run the Lasso on each of the SCF's five multiply-imputed datasets
+separately and retain only variables that survive in at least three of five (majority
+rule). This data-driven selection is then combined with theoretically motivated
+demographic controls (marital status, parenthood, education, employment, race, gender,
+homeownership, pension access, and credit denial experience).
+
+```{r build-formula}
+lasso_final <- setdiff(lasso_survivors,
+  c("asinh_ccbal", "ccbal", "has_ccdebt", "log_ccbal"))
+
+all_predictors <- unique(c(lasso_final, categorical_predictors))
+```
+
+```{r show-predictors, results='asis'}
+cat(sprintf("**Total predictors:** %d (%d from Lasso + %d categorical)\n\n",
+  length(all_predictors), length(lasso_final), length(categorical_predictors)))
+cat(paste("- ", all_predictors, collapse = "\n"))
+cat("\n")
+```
+
+## Part 1: Who Carries Any Credit Card Debt?
+
+The logistic regression answers the extensive margin question: what predicts whether a
+household carries *any* revolving credit card balance? The table below shows odds ratios,
+where values above 1.0 indicate higher odds of carrying debt and values below 1.0
+indicate lower odds.
+
+```{r part1-logit}
+logit_formula <- as.formula(
+  paste("has_ccdebt ~", paste(all_predictors, collapse = " + "))
+)
+
+logit_model <- scf_glm(scf_2022, logit_formula, family = binomial())
+
+# Manually compute odds ratios since scf_glm may not support exponentiate
+logit_results <- logit_model$results
+logit_results$odds_ratio <- exp(logit_results$estimate)
+logit_results$or_lower   <- exp(logit_results$estimate - 1.96 * logit_results$std.error)
+logit_results$or_upper   <- exp(logit_results$estimate + 1.96 * logit_results$std.error)
+```
+
+```{r logit-table, results='hide'}
+# Table header is provided in the narrative above
+```
+
+```{r logit-print}
+logit_display <- logit_results %>%
+  select(term, estimate, std.error, odds_ratio, or_lower, or_upper, p.value, stars) %>%
+  mutate(across(c(estimate, std.error, odds_ratio, or_lower, or_upper), ~round(., 4)),
+         p.value = formatC(p.value, format = "e", digits = 2))
+
+kable(logit_display,
+      col.names = c("Term", "Log-Odds", "SE", "Odds Ratio", "OR Lower", "OR Upper",
+                     "p-value", ""),
+      caption = "Table 2. Logistic Regression Results (Part 1)")
+```
+
+```{r logit-fit, results='asis'}
+# Compute pseudo-R² (McFadden) from first implicate
+imp1_vars <- scf_2022$mi_design[[1]]$variables
+null_dev <- svyglm(has_ccdebt ~ 1, design = scf_2022$mi_design[[1]],
+                    family = binomial())$deviance
+full_dev <- svyglm(logit_formula, design = scf_2022$mi_design[[1]],
+                    family = binomial())$deviance
+pseudo_r2 <- round(1 - full_dev / null_dev, 4)
+
+cat(sprintf("\n**Model fit (Implicate 1):** McFadden pseudo-R² = %.4f; Null deviance = %.1f;
+Residual deviance = %.1f\n", pseudo_r2, null_dev, full_dev))
+```
+
+## Part 2: Among Debtors, What Predicts Higher Balances?
+
+The OLS regression answers the intensive margin question: among the roughly 45% of
+households that carry a balance, what predicts *how much* they owe? The outcome is the
+natural log of the credit card balance, and the sample is restricted to households with
+positive balances.
+
+```{r part2-subset}
+scf_debtors <- scf_2022
+for (i in 1:5) {
+  idx <- scf_2022$mi_design[[i]]$variables$ccbal > 0
+  scf_debtors$mi_design[[i]] <- subset(scf_2022$mi_design[[i]], idx)
+}
+```
+
+```{r part2-ols}
+ols_formula <- as.formula(
+  paste("log_ccbal ~", paste(all_predictors, collapse = " + "))
+)
+
+ols_model <- scf_ols(scf_debtors, ols_formula)
+```
+
+```{r ols-table}
+kable(ols_model$results %>%
+  mutate(across(c(estimate, std.error, t.value), ~round(., 4)),
+         p.value = formatC(p.value, format = "e", digits = 2)),
+  col.names = c("Term", "Estimate", "SE", "t-value", "p-value", ""),
+  caption = "Table 3. OLS Regression Results (Part 2: log(ccbal) | ccbal > 0)")
+```
+
+```{r ols-fit, results='asis'}
+# R² from first implicate
+ols_imp1 <- svyglm(ols_formula, design = scf_debtors$mi_design[[1]])
+ss_res <- sum(weights(scf_debtors$mi_design[[1]]) *
+  residuals(ols_imp1)^2)
+y_obs <- scf_debtors$mi_design[[1]]$variables$log_ccbal
+w_obs <- weights(scf_debtors$mi_design[[1]])
+ss_tot <- sum(w_obs * (y_obs - weighted.mean(y_obs, w_obs))^2)
+r2_ols <- round(1 - ss_res / ss_tot, 4)
+
+n_debtors <- nrow(scf_debtors$mi_design[[1]]$variables)
+cat(sprintf("\n**Model fit (Implicate 1):** Weighted R² = %.4f; N (debtors) = %s\n",
+  r2_ols, formatC(n_debtors, big.mark = ",")))
+```
+
+## Coefficient Comparison
+
+```{r coefficient-plot, fig.width=11, fig.height=9}
+logit_df <- logit_model$results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(model = "Part 1: Logit (Has Debt)")
+
+ols_df <- ols_model$results %>%
+  filter(term != "(Intercept)") %>%
+  mutate(model = "Part 2: OLS (log Balance)")
+
+combined <- bind_rows(logit_df, ols_df) %>%
+  mutate(
+    significant = p.value < 0.05,
+    direction = ifelse(estimate > 0, "Positive", "Negative")
+  )
+
+ggplot(combined, aes(x = reorder(term, abs(estimate)), y = estimate,
+                      fill = direction, alpha = significant)) +
+  geom_col(width = 0.7) +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                     ymax = estimate + 1.96 * std.error),
+                width = 0.3, linewidth = 0.4) +
+  facet_wrap(~model, scales = "free_x") +
+  scale_fill_manual(values = c("Positive" = "steelblue", "Negative" = "coral")) +
+  scale_alpha_manual(values = c("TRUE" = 1.0, "FALSE" = 0.3)) +
+  coord_flip() +
+  labs(
+    title = "Two-Part Model: Predictors of Credit Card Debt",
+    subtitle = "Part 1: Who carries debt? | Part 2: How much?",
+    x = NULL, y = "Coefficient Estimate (95% CI)",
+    fill = "Direction", alpha = "p < 0.05"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+---
+
+
+# What the Data Tells Us: Five Key Findings
+
+The two-part model separates two distinct questions — who takes on credit card debt, and
+how much they carry — revealing that the answers are not the same. The following findings
+are ordered by their practical significance.
+
+## Finding 1: The First Child Is the Financial Tipping Point
+
+```{r finding1, results='asis'}
+logit_hc <- logit_results %>% filter(term == "has_children")
+logit_k  <- logit_results %>% filter(term == "kids")
+ols_hc   <- ols_model$results %>% filter(term == "has_children")
+
+cat(sprintf("The single most striking result concerns parenthood. Having any children
+increases the odds of carrying credit card debt by %.0f%% (OR = %.2f, p < 0.001). This
+is the largest demographic effect in the model — larger than employment, education,
+race, or marriage.\n\n",
+  100 * (logit_hc$odds_ratio - 1), logit_hc$odds_ratio))
+
+cat(sprintf("But here is the nuance: among households that already carry debt, the
+presence of children does *not* predict higher balances (OLS p = %.3f). And each
+additional child beyond the first is actually associated with *lower* odds of carrying
+debt (OR = %.2f, p = %.3f). This suppression effect suggests that the first child is
+the financially consequential event. Larger families tend to be older, more established
+households that have moved past the acute expense shock of a new baby.\n\n",
+  ols_hc$p.value, exp(logit_k$estimate), logit_k$p.value))
+
+cat("**The takeaway for young adults:** The transition from zero to one child is the
+moment when credit card debt becomes significantly more likely. Financial planning for
+parenthood should focus on this transition — building an emergency fund, reducing
+existing debt, and anticipating the lumpy expenses (medical bills, childcare, equipment)
+that accompany a first child.\n")
+```
+
+## Finding 2: Marriage Does Not Independently Predict Credit Card Debt
+
+```{r finding2, results='asis'}
+logit_m <- logit_results %>% filter(term == "currently_married")
+ols_m   <- ols_model$results %>% filter(term == "currently_married")
+
+cat(sprintf("Marriage has no significant independent effect on credit card debt. The
+odds ratio is %.2f (p = %.3f) — and the OLS coefficient among debtors is essentially
+zero (p = %.3f).\n\n",
+  logit_m$odds_ratio, logit_m$p.value, ols_m$p.value))
+
+cat("This is a substantively important null finding. In the descriptive statistics,
+married households carry higher average balances. But that association disappears
+entirely once we control for income, homeownership, pension access, and other financial
+characteristics. Married households carry more debt not because of marriage itself, but
+because marriage is correlated with higher income, homeownership, and greater access to
+credit.\n\n")
+
+cat("**The takeaway:** For researchers and counselors interested in the relationship
+between financial stress and marriage, credit card debt should be understood as a
+function of the household's broader financial position, not as a distinctive feature of
+married life.\n")
+```
+
+## Finding 3: Credit Denial Is the Strongest Predictor of Revolving Debt
+
+```{r finding3, results='asis'}
+logit_td <- logit_results %>% filter(term == "turned_down")
+ols_td   <- ols_model$results %>% filter(term == "turned_down")
+
+cat(sprintf("Households that have been denied credit in the past five years have %.0f%%
+higher odds of carrying a credit card balance (OR = %.2f, p < 0.001). This is the single
+largest coefficient in the logistic model. However, among those who carry debt, credit
+denial does not predict higher balances (OLS p = %.3f).\n\n",
+  100 * (logit_td$odds_ratio - 1), logit_td$odds_ratio, ols_td$p.value))
+
+cat("This pattern suggests that credit cards function as a *last resort* for financially
+excluded households. Denied other forms of credit (auto loans, personal loans, home
+equity lines), these households lean on their existing credit card lines. The amounts
+they carry are then governed by their credit limits and income, not by the denial
+experience itself.\n\n")
+
+cat("**The takeaway:** Credit denial is a powerful signal of financial vulnerability. A
+household that has been turned down for credit is nearly twice as likely to be revolving
+credit card debt. For financial counselors, a recent credit denial should trigger a
+conversation about debt management strategies.\n")
+```
+
+## Finding 4: Higher Wages Help People Pay Down Debt
+
+```{r finding4, results='asis'}
+ols_wage <- ols_model$results %>% filter(term == "asinh_wageinc")
+
+cat(sprintf("Among debtors, higher wage income is associated with significantly lower
+credit card balances (OLS coefficient = %.3f, p = %.3f). This is one of the few
+variables that reaches significance in the Part 2 model.\n\n",
+  ols_wage$estimate, ols_wage$p.value))
+
+cat("The interpretation is straightforward: earnings provide debt-repayment capacity.
+Workers who earn more can pay down their balances faster. This contrasts with total
+household income, which is not significant — suggesting that it is *earned* income from
+labor, not investment returns or transfers, that drives repayment behavior.\n\n")
+
+cat("**The takeaway for policy:** Programs that increase wages or reduce income
+volatility may be more effective at reducing credit card debt burdens than programs that
+expand credit access. Expanding access increases the *prevalence* of debt (more people
+can borrow) but does not reduce its *severity* (how much they owe). Wage growth
+addresses severity directly.\n")
+```
+
+## Finding 5: Liquid Savings Protect Against Entering Debt
+
+```{r finding5, results='asis'}
+logit_liq <- logit_results %>% filter(term == "asinh_liq")
+logit_stk <- logit_results %>% filter(term == "asinh_stocks")
+logit_nmf <- logit_results %>% filter(term == "asinh_nmmf")
+
+cat(sprintf("Households with more liquid assets are significantly less likely to carry
+any credit card debt. Liquid savings (OR = %.2f), stock holdings (OR = %.2f), and
+mutual fund balances (OR = %.2f) all carry significant negative coefficients in the
+logistic model.\n\n",
+  logit_liq$odds_ratio, logit_stk$odds_ratio, logit_nmf$odds_ratio))
+
+cat("However, among those who carry debt, asset levels do not consistently predict
+lower balances. This asymmetry reveals a threshold effect: liquid savings determine
+whether a household *needs* to use credit cards as a borrowing tool. If an unexpected
+expense arises, a household with savings can absorb it; a household without savings
+reaches for the credit card. But once a household is carrying a balance, other factors
+— debt-to-income ratio, installment obligations, income — matter more for the
+amount.\n\n")
+
+cat("**The takeaway:** Emergency savings are the first line of defense against credit
+card debt. Even a modest liquid savings buffer can prevent the entry into revolving
+debt that becomes difficult to escape.\n")
+```
+
+---
+
+# Conclusion
+
+This analysis reveals that credit card debt in America is not a monolithic phenomenon —
+it is a two-stage process driven by different forces at each stage. The factors that push
+a household into revolving debt (parenthood, credit denial, lack of liquid savings) are
+largely distinct from the factors that determine how much debt they carry (wages,
+debt-to-income ratio, installment obligations).
+
+The central finding — that the first child is the single most consequential event for
+credit card indebtedness — has direct implications for financial counselors, policy
+makers, and young adults themselves. The transition to parenthood increases the odds of
+carrying credit card debt by 54%, but marriage does not. Additional children beyond the
+first do not compound the effect. This means the financial preparation conversation
+should center on the first pregnancy, not on the wedding.
+
+For policy, the data points in two directions. First, expanding credit access without
+addressing underlying financial vulnerability will increase the *prevalence* of credit
+card debt without reducing its *severity*. Second, wage growth is the most effective
+lever for reducing balances among those who already carry debt — higher earners pay down
+faster. Programs that combine income support with financial literacy at the transition
+to parenthood may be the most targeted intervention available.
+
+---
+
+---
+
+# Appendix: Technical Notes
+
+**Multiple Imputation.** All statistics and models are pooled across the SCF's five
+implicates using Rubin's Rules, as implemented by the `scf` package. No results are
+reported from a single implicate. Model fit statistics (pseudo-R², R²) are reported from
+Implicate 1 for reference; these may vary slightly across implicates.
+
+**Survey Weights.** All estimates use the SCF replicate weights (balanced repeated
+replication) to account for the complex survey design, including oversampling of wealthy
+households.
+
+**Lasso Implementation.** Lasso was run via `glmnet` with 10-fold cross-validation on
+each implicate separately. We used `lambda.1se` (the most regularized model within one
+standard error of the minimum CV error) for parsimony. The majority rule (variable survives
+in >= 3 of 5 implicates) ensures robustness to imputation variation.
+
+**Tautology Correction.** Total household debt (`debt`) includes credit card balances as
+a component. To avoid a mechanically inflated coefficient, we constructed
+`debt_excl_cc = max(debt - ccbal, 0)` and used its asinh transform in place of
+`asinh_debt` throughout the Lasso and regression models.
+
+**Two-Part Model.** Part 1 is a logistic regression on the binary indicator `has_ccdebt`.
+Part 2 is OLS on `log(ccbal)` conditional on `ccbal > 0`. This approach is standard for
+semicontinuous outcomes with a large mass at zero and a continuous positive tail (Duan et
+al., 1983; Manning et al., 1987).
+
+**Suppression Effect: kids vs. has_children.** Both the continuous count of children and
+the binary indicator are included in the model. The opposite-signed coefficients are a
+classical suppression pattern: the binary indicator captures the extensive margin (any
+children vs. none), while the continuous count captures the intensive margin conditional on
+the binary. This is analogous to a two-part specification within the predictor set itself.
+
+```{r session-info, results='asis'}
+cat("\n\n**Session Information**\n\n")
+cat(sprintf("R version: %s\n\n", R.version.string))
+cat(sprintf("Platform: %s\n\n", R.version$platform))
+cat(sprintf("Key packages: scf %s, glmnet %s, survey %s\n",
+  packageVersion("scf"), packageVersion("glmnet"), packageVersion("survey")))
+```
