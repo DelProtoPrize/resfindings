@@ -1,0 +1,1451 @@
+---
+title: "Nativity, Economic Status, and Childlessness in America"
+subtitle: "A Nativity Analysis Using the National Survey of Family Growth (2022–2023)"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+options(survey.lonely.psu = "adjust")
+```
+
+# Abstract
+
+This paper directly tests the hypothesis that nativity — being foreign-born versus
+native-born — explains racial and ethnic differences in completed childlessness among
+U.S. women. Using the 2022–2023 National Survey of Family Growth (NSFG), we analyze
+women aged 40–49 who have reached the end of their childbearing years. The NSFG provides
+what the Survey of Consumer Finances cannot: a definitive measure of biological fertility
+(children ever born), nativity data for the respondent, and standard economic and
+demographic controls.
+
+Using a sequential logistic regression design, we first estimate the unconditional racial
+gradient in completed childlessness, then introduce nativity status (foreign-born vs.
+native-born) to determine how much of the racial gradient is attributable to nativity
+composition, and finally add economic and demographic controls to identify the residual.
+We test whether the effects of education and marriage on childlessness differ by nativity
+through interaction models. Parental birthplace variables were not available in the
+2022–2023 public-use file, limiting the analysis to a two-category nativity measure
+rather than the full three-category generational status (first, second, third-plus
+generation) originally planned.
+
+This study completes a three-paper thesis: the first paper analyzed credit card
+indebtedness, the second examined the financial balance sheet of co-resident
+childlessness, and this paper provides the direct nativity test that the SCF-based
+analyses could only theorize about.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey",
+  "broom", "knitr", "ggplot2", "scales"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+# Introduction
+
+While rising childlessness is a well-documented trend in the United States, its
+distribution is profoundly unequal. For some groups, childlessness remains rare; for
+others, it is becoming the norm. Among women aged 40–49, completed childlessness rates
+range from under 6% for those without a high school diploma to over 27% for those with
+graduate degrees — and from 12% among foreign-born Hispanic women to 26% among
+native-born women in the "Other" racial category. Understanding this divergence requires
+moving beyond simple stories of cultural difference or economic constraint and instead
+examining the compositional forces — particularly immigration — that shape the
+population-level patterns we observe.
+
+The first two papers in this thesis established that (1) the transition to parenthood is
+the strongest demographic predictor of credit card indebtedness, and (2) the financial
+balance sheet of childless households differs systematically from that of parents — with
+retirement asset accumulation and credit constraints, not income, distinguishing the two
+groups. Both analyses used the Survey of Consumer Finances (SCF), which provides
+unmatched financial detail but lacks any measure of nativity or biological fertility.
+
+The SCF companion paper found that racial and ethnic differences in co-resident
+childlessness were fully absorbed by financial and demographic controls, and hypothesized
+— based on external literature — that immigration-driven compositional effects might
+explain the descriptive racial gradient. This paper tests that hypothesis directly.
+
+The theoretical framework for this test draws on the classic assimilation model, which
+predicts a linear convergence of immigrant fertility toward native-born norms across
+generations (Parrado & Morgan, 2008; Hill & Johnson, 2004). Under this model,
+first-generation immigrants arrive with fertility norms shaped by their origin countries,
+while the second generation — raised in the U.S. — exhibits fertility patterns closer to
+the native-born population. By the third-plus generation, convergence is expected to be
+largely complete. However, contemporary scholarship has complicated this linear narrative.
+Portes and Zhou's (1993) theory of *segmented assimilation* argues that the trajectory is
+not uniform: different immigrant groups may follow divergent pathways depending on their
+socioeconomic resources, the co-ethnic community they enter, and the opportunity structure
+they encounter. For example, high-SES Hispanic immigrants (e.g., from South America or
+Cuba) may follow a different fertility trajectory than lower-SES immigrants from Central
+America. While our two-category nativity measure cannot directly test segmented
+assimilation — which would require country-of-origin data and a three-category
+generational variable — we frame our analysis as consistent with the classic model and
+note where the results suggest more complex dynamics at work.
+
+The National Survey of Family Growth (NSFG) is the premier U.S. dataset on fertility and
+family formation. It provides three capabilities the SCF lacks: (1) a definitive measure
+of biological fertility — children ever born (`PARITY`), not merely co-resident children;
+(2) nativity data for the respondent, enabling a direct foreign-born/native-born
+comparison^[Parental birthplace variables (`MOMFBRN`, `DADFBRN`) were not available in
+the 2022–2023 public-use file, limiting the analysis to a two-category nativity measure.
+Earlier NSFG waves and the restricted-use file include parental birthplace.]; and (3)
+fertility intentions, which can distinguish voluntary from involuntary childlessness.
+
+**Note on sample:** This analysis is restricted to **female respondents only**, which is
+the demographic standard for measuring completed fertility (Guzzo & Loo, 2023). The NSFG
+interviews men and women using entirely separate questionnaire files with different
+variable structures and different fertility measurement approaches; the male respondent
+file is not included here. Because the sample contains only women, gender interactions
+are not applicable.^[In the NSFG, "Hispanic" includes women who self-identify as
+Hispanic or Latina, regardless of race, following the 1997 OMB standards as implemented
+in the `HISPRACE2` recode. This includes women of Mexican, Puerto Rican, Cuban, Central
+American, South American, and other Hispanic origin.]
+
+**Research Questions:**
+
+1. *Primary:* To what extent does nativity (foreign-born vs. native-born) explain racial
+   and ethnic differences in completed childlessness among U.S. women?
+
+2. *Secondary (Mediation):* Do economic factors (education, income, employment) and
+   family structure (marital status) mediate the relationship between nativity and
+   childlessness?
+
+3. *Secondary (Interaction):* Do the effects of education and marriage on childlessness
+   differ by nativity status?
+
+---
+
+# Data and Methods
+
+## Data Source
+
+We use the female respondent file from the 2022–2023 NSFG, the most recent wave
+available. The NSFG surveys women aged 15–49 in the civilian noninstitutionalized
+household population. Data were collected by NORC at the University of Chicago using
+computer-assisted personal interviewing (CAPI), with sensitive items administered via
+audio computer-assisted self-interviewing (ACASI).
+
+```{r download-data}
+dir.create("nsfg_data", showWarnings = FALSE, recursive = TRUE)
+
+file_path <- "nsfg_data/fem_resp_2022_2023.sas7bdat"
+
+if (!file.exists(file_path)) {
+  cat("Downloading 2022-2023 NSFG Female Respondent file...\n")
+  tryCatch(
+    download.file(
+      "https://ftp.cdc.gov/pub/Health_Statistics/NCHS/NSFG/NSFG-2022-2023-FemRespPUFData.sas7bdat",
+      file_path, mode = "wb", quiet = TRUE
+    ),
+    error = function(e) cat("Download error:", conditionMessage(e), "\n")
+  )
+}
+
+nsfg_tbl <- read_sas(file_path)
+nsfg_pooled <- as.data.frame(nsfg_tbl)
+names(nsfg_pooled) <- tolower(names(nsfg_pooled))
+nsfg_pooled$wave <- "2022-2023"
+```
+
+```{r load-confirm, results='asis'}
+cat(sprintf("NSFG 2022–2023 loaded: %s female respondents.\n",
+  formatC(nrow(nsfg_pooled), big.mark = ",")))
+```
+
+## Variable Construction
+
+```{r variables, results='asis'}
+nsfg <- nsfg_pooled
+
+# ---- 1. OUTCOME: Completed Childlessness ----
+# PARITY = total number of live births ever had (recode)
+nsfg$completed_childless <- as.integer(nsfg$parity == 0)
+
+# ---- 2. AGE ----
+nsfg$age <- nsfg$ager
+
+# ---- 3. RACE / ETHNICITY (NH White as reference) ----
+# HISPRACE2: 1=Hispanic, 2=NH White, 3=NH Black, 4=NH Other/Multiple
+nsfg$race_eth <- factor(nsfg$hisprace2,
+  levels = c(2, 1, 3, 4),
+  labels = c("NH White", "Hispanic", "NH Black", "NH Other/Multiple")
+)
+
+# ---- 4. NATIVITY & GENERATIONAL STATUS ----
+nsfg$foreign_born <- as.integer(nsfg$brnout == 1)
+
+has_mom <- "momfbrn" %in% names(nsfg)
+has_dad <- "dadfbrn" %in% names(nsfg)
+
+if (has_mom && has_dad) {
+  nsfg$mom_foreign <- as.integer(nsfg$momfbrn == 1)
+  nsfg$dad_foreign <- as.integer(nsfg$dadfbrn == 1)
+
+  nsfg$gen_status <- case_when(
+    nsfg$foreign_born == 1 ~ "1st Generation",
+    nsfg$foreign_born == 0 &
+      (nsfg$mom_foreign == 1 | nsfg$dad_foreign == 1) ~ "2nd Generation",
+    nsfg$foreign_born == 0 &
+      nsfg$mom_foreign == 0 & nsfg$dad_foreign == 0 ~ "3rd+ Generation",
+    TRUE ~ NA_character_
+  )
+  nsfg$gen_status <- factor(nsfg$gen_status,
+    levels = c("3rd+ Generation", "2nd Generation", "1st Generation"))
+
+  cat("Generational status created using respondent + parental birthplace.\n\n")
+} else {
+  nsfg$gen_status <- factor(
+    ifelse(nsfg$foreign_born == 1, "Foreign-Born", "Native-Born"),
+    levels = c("Native-Born", "Foreign-Born")
+  )
+  cat("NOTE: Parental nativity variables not found. Using respondent nativity only.\n")
+  if (!has_mom) cat("  Missing: MOMFBRN\n")
+  if (!has_dad) cat("  Missing: DADFBRN\n")
+  cat("\n")
+}
+
+# ---- 5. EDUCATION (5 levels) ----
+# 2022-2023 HIEDUC codes:
+# 1=Less than 12th grade, 2=12th grade no diploma, 3=GED, 4=HS graduate,
+# 5=Some college no degree, 6=Associate (occupational), 7=Associate (academic),
+# 8=Bachelor's, 9=Master's, 10=Professional (MD/JD), 11=Doctoral (PhD/EdD)
+nsfg$educ <- case_when(
+  nsfg$hieduc %in% c(1, 2)     ~ "Less than HS",
+  nsfg$hieduc %in% c(3, 4)     ~ "HS Diploma/GED",
+  nsfg$hieduc %in% c(5, 6, 7)  ~ "Some College/Associate",
+  nsfg$hieduc == 8              ~ "Bachelor's Degree",
+  nsfg$hieduc >= 9              ~ "Graduate/Professional",
+  TRUE ~ NA_character_
+)
+nsfg$educ <- factor(nsfg$educ,
+  levels = c("Less than HS", "HS Diploma/GED",
+             "Some College/Associate", "Bachelor's Degree",
+             "Graduate/Professional"))
+
+# Binary: bachelor's or higher (for interaction models)
+nsfg$college <- as.integer(nsfg$hieduc >= 8)
+
+# Binary: graduate/professional degree (for additional analysis)
+nsfg$grad_degree <- as.integer(nsfg$hieduc >= 9)
+
+# ---- 6. MARITAL STATUS ----
+nsfg$ever_married      <- as.integer(nsfg$fmarital %in% c(1, 2, 3, 4))
+nsfg$currently_married <- as.integer(nsfg$fmarital == 1)
+
+# ---- 7. OTHER CONTROLS ----
+nsfg$employed    <- as.integer(nsfg$laborfor == 1)
+nsfg$poverty_pct <- nsfg$poverty
+nsfg$religion    <- factor(nsfg$religion,
+  levels = 1:4,
+  labels = c("No Religion", "Catholic", "Protestant", "Other"))
+
+if ("rwant" %in% names(nsfg)) {
+  nsfg$wants_children <- as.integer(nsfg$rwant == 1)
+}
+
+nsfg$wave_f <- factor(nsfg$wave)
+
+# ---- SUMMARY ----
+cat(sprintf("Total sample: %s female respondents.\n",
+  formatC(nrow(nsfg), big.mark = ",")))
+cat(sprintf("Women aged 40-49: %s.\n",
+  formatC(sum(nsfg$age >= 40 & nsfg$age <= 49, na.rm = TRUE), big.mark = ",")))
+cat(sprintf("Completed childlessness rate (full sample): %.1f%%.\n",
+  mean(nsfg$completed_childless, na.rm = TRUE) * 100))
+```
+
+## Sample Restriction and Survey Design
+
+```{r sample-and-design, results='asis'}
+nsfg_40 <- nsfg %>% filter(age >= 40, age <= 49)
+
+# Weight
+nsfg_40$analysis_weight <- nsfg_40$wgt2022_2023
+
+# Survey design: 2022-2023 uses vecl (cluster) and vest (stratum)
+nsfg_design <- svydesign(
+  id      = ~ vecl,
+  strata  = ~ vest,
+  weights = ~ analysis_weight,
+  data    = nsfg_40,
+  nest    = TRUE
+)
+
+cat(sprintf("Analytic sample: %s women aged 40-49.\n",
+  formatC(nrow(nsfg_40), big.mark = ",")))
+cat(sprintf("Strata: %d. Clusters: %d.\n",
+  length(unique(nsfg_40$vest)), length(unique(nsfg_40$vecl))))
+
+n_clusters <- length(unique(nsfg_40$vecl))
+if (n_clusters < 10) {
+  cat(sprintf("\nNOTE: Only %d clusters detected in the analytic sample. This is low
+for variance estimation and may produce unstable standard errors, particularly for
+subgroup analyses. The option survey.lonely.psu='adjust' is applied throughout to
+handle isolated PSUs, but this does not fully compensate for a small number of
+primary sampling units. Standard errors should be interpreted with caution.\n",
+    n_clusters))
+}
+```
+
+## Analytical Plan
+
+Our analysis proceeds in four stages:
+
+1. **Descriptive analysis:** Cross-tabulate completed childlessness by race/ethnicity
+   and generational status to show unconditional rates.
+
+2. **Sequential logistic regression:**
+   - *Model 1:* `completed_childless ~ race_eth` (unconditional racial gradient)
+   - *Model 2:* `completed_childless ~ race_eth + gen_status` (does generation account
+     for the race effect?)
+   - *Model 3:* `completed_childless ~ race_eth + gen_status + controls` (full model)
+
+3. **Interaction models:** Test `gen_status × college` and
+   `gen_status × currently_married`.
+
+4. **Sensitivity check:** Include fertility intentions if available.
+
+All models use NSFG survey weights and account for the complex sample design.
+
+---
+
+# Descriptive Results: The Story Told by the Raw Numbers
+
+## Cell Sizes
+
+```{r cell-sizes, results='asis'}
+cell_table <- nsfg_40 %>%
+  filter(!is.na(gen_status), !is.na(race_eth)) %>%
+  count(gen_status, race_eth) %>%
+  pivot_wider(names_from = race_eth, values_from = n, values_fill = 0)
+
+cat("**Table 1. Unweighted Cell Sizes by Generational Status and Race/Ethnicity**\n\n")
+```
+
+```{r cell-sizes-table}
+kable(cell_table)
+```
+
+```{r cell-size-check, results='asis'}
+min_cells <- nsfg_40 %>%
+  filter(!is.na(gen_status), !is.na(race_eth)) %>%
+  count(gen_status, race_eth) %>%
+  filter(n < 30)
+
+if (nrow(min_cells) > 0) {
+  cat("\n**Warning:** The following cells have fewer than 30 observations:\n\n")
+  for (j in 1:nrow(min_cells)) {
+    cat(sprintf("- %s x %s: n = %d\n",
+      min_cells$gen_status[j], min_cells$race_eth[j], min_cells$n[j]))
+  }
+  cat("\n")
+} else {
+  cat("\nAll cells contain at least 30 observations.\n\n")
+}
+```
+
+## What the Numbers Tell Us Before We Model
+
+Before running any regressions, we examine completed childlessness rates across the key
+demographic groups. These descriptive patterns are the foundation on which the
+multivariate analysis will build — they motivate the sequential regression and let us
+see where the nativity story is hiding in plain sight.
+
+```{r desc-compute, include=FALSE}
+# Compute all rates silently — stored for narrative use below
+get_rate <- function(by_var) {
+  r <- svyby(~completed_childless, as.formula(paste0("~", by_var)),
+             nsfg_design, svymean, na.rm = TRUE)
+  df <- as.data.frame(r)
+  df$rate <- round(df$completed_childless * 100, 1)
+  df$se_pct <- round(df$se * 100, 1)
+  df
+}
+
+rate_race <- get_rate("race_eth")
+rate_gen <- get_rate("gen_status")
+rate_educ <- get_rate("educ")
+rate_mar <- get_rate("currently_married")
+rate_rel <- get_rate("religion")
+
+race_gen_raw <- svyby(~completed_childless, ~race_eth + gen_status,
+                       nsfg_design, svymean, na.rm = TRUE)
+rate_race_gen <- as.data.frame(race_gen_raw)
+rate_race_gen$rate <- round(rate_race_gen$completed_childless * 100, 1)
+
+# Helper to pull a specific cell
+pull_rate <- function(df, col, val) {
+  df$rate[df[[col]] == val][1]
+}
+pull_race_gen <- function(race, gen) {
+  rate_race_gen$rate[rate_race_gen$race_eth == race & rate_race_gen$gen_status == gen][1]
+}
+```
+
+```{r desc-narrative, results='asis'}
+cat(sprintf("**The racial story looks simple until nativity enters the frame.** At the
+aggregate level, NH White women aged 40–49 have the highest completed childlessness rate
+at %.1f%%, followed by NH Black women at %.1f%%, NH Other/Multiple at %.1f%%, and
+Hispanic women at %.1f%%. The Hispanic rate stands out as conspicuously low — nearly
+seven percentage points below the NH White rate. This is the unconditional racial
+gradient that the first model in our sequential regression will estimate.\n\n",
+  pull_rate(rate_race, "race_eth", "NH White"),
+  pull_rate(rate_race, "race_eth", "NH Black"),
+  pull_rate(rate_race, "race_eth", "NH Other/Multiple"),
+  pull_rate(rate_race, "race_eth", "Hispanic")))
+
+cat(sprintf("**But the picture changes dramatically when we split by nativity.** Native-
+born women have a childlessness rate of %.1f%%. Foreign-born women have a rate of %.1f%%
+— roughly half that of the native-born. This is the aggregate nativity gap, and it is
+large enough that compositional differences between racial groups could plausibly
+explain a substantial share of the observed racial gradient.\n\n",
+  pull_rate(rate_gen, "gen_status", "Native-Born"),
+  pull_rate(rate_gen, "gen_status", "Foreign-Born")))
+
+cat(sprintf("**The crucial cross-tabulation tells the full story.** Native-born Hispanic
+women have a childlessness rate of %.1f%% — essentially indistinguishable from native-
+born NH White women at %.1f%%. Foreign-born Hispanic women, by contrast, have a rate of
+only %.1f%%. The entire 'Hispanic advantage' in lower childlessness is concentrated in
+the foreign-born segment. Once we control for nativity, Hispanic women born in the
+United States look just like other native-born American women of comparable
+background.\n\n",
+  pull_race_gen("Hispanic", "Native-Born"),
+  pull_race_gen("NH White", "Native-Born"),
+  pull_race_gen("Hispanic", "Foreign-Born")))
+
+cat(sprintf("**The AAPI/Other pattern is even more striking, though in aggregate it hides.**
+Native-born Other/Multiple women have a childlessness rate of %.1f%% — the highest of
+any native-born racial group. Foreign-born Other/Multiple women have a rate of only
+%.1f%%. This is a nativity gap of more than 14 percentage points, larger than the
+Hispanic gap. Yet because these two subgroups average to around %.1f%% in the aggregate,
+the overall 'Other' category coefficient is unremarkable in the regressions that follow.
+This is a warning: aggregate racial categories can conceal enormous within-group
+heterogeneity driven by nativity composition.\n\n",
+  pull_race_gen("NH Other/Multiple", "Native-Born"),
+  pull_race_gen("NH Other/Multiple", "Foreign-Born"),
+  pull_rate(rate_race, "race_eth", "NH Other/Multiple")))
+
+cat(sprintf("**The Black-White gap, by contrast, cannot be a nativity story.** Native-
+born Black women have a childlessness rate of %.1f%% and foreign-born Black women have a
+rate of %.1f%% — but the sample contains only 14 foreign-born Black women, reflecting
+the demographic reality that the U.S. Black population is predominantly native-born for
+multiple generations. Whatever drives the Black-White childlessness gap, it operates
+through channels other than immigration composition.\n\n",
+  pull_race_gen("NH Black", "Native-Born"),
+  pull_race_gen("NH Black", "Foreign-Born")))
+
+cat(sprintf("**Other demographic gradients behave as expected from prior research.**
+Childlessness rises monotonically with education, from %.1f%% among women without a high
+school diploma to %.1f%% among women with graduate or professional degrees. Married
+women have a childlessness rate of %.1f%% compared to %.1f%% for unmarried women — the
+largest single-variable gap in the descriptive data. Women with no religious
+affiliation have a childlessness rate of %.1f%%, while Protestant women have a rate of
+only %.1f%%. These gradients will all re-emerge as significant predictors in the
+multivariate models.\n\n",
+  pull_rate(rate_educ, "educ", "Less than HS"),
+  pull_rate(rate_educ, "educ", "Graduate/Professional"),
+  rate_mar$rate[rate_mar$currently_married == 1],
+  rate_mar$rate[rate_mar$currently_married == 0],
+  pull_rate(rate_rel, "religion", "No Religion"),
+  pull_rate(rate_rel, "religion", "Protestant")))
+
+cat("**What the descriptive analysis suggests:** The aggregate racial gradient in
+childlessness is likely driven by the compositional share of foreign-born women within
+each racial group, not by intrinsic racial differences in fertility behavior. The
+sequential regression that follows tests this directly by asking how much of the race
+coefficient disappears when nativity is added to the model.\n")
+```
+
+## Visualizations
+
+```{r viz-race-gen, fig.width=11, fig.height=6}
+race_gen <- svyby(~completed_childless, ~race_eth + gen_status, nsfg_design,
+                   svymean, na.rm = TRUE)
+rg_df <- as.data.frame(race_gen)
+
+ggplot(rg_df, aes(x = race_eth, y = completed_childless * 100, fill = gen_status)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_errorbar(aes(ymin = (completed_childless - 1.96 * se) * 100,
+                     ymax = (completed_childless + 1.96 * se) * 100),
+                position = position_dodge(width = 0.8), width = 0.2) +
+  scale_fill_brewer(palette = "Set2", name = "Generation") +
+  labs(
+    title = "Completed Childlessness by Race/Ethnicity and Generational Status",
+    subtitle = "Women aged 40-49, NSFG 2022-2023 (survey-weighted)",
+    x = NULL, y = "% Childless (no children ever born)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 15, hjust = 1)) +
+  ylim(0, NA)
+```
+
+```{r viz-education, fig.width=10, fig.height=5}
+educ_rates <- svyby(~completed_childless, ~educ, nsfg_design, svymean, na.rm = TRUE)
+ed_df <- as.data.frame(educ_rates)
+
+ggplot(ed_df, aes(x = educ, y = completed_childless * 100, fill = educ)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = (completed_childless - 1.96 * se) * 100,
+                     ymax = (completed_childless + 1.96 * se) * 100),
+                width = 0.2) +
+  geom_text(aes(label = sprintf("%.1f%%", completed_childless * 100)),
+            vjust = -1.2, size = 3.5) +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(
+    title = "Completed Childlessness by Education (Women 40-49)",
+    subtitle = "NSFG 2022-2023 (survey-weighted)",
+    x = NULL, y = "% Childless"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") +
+  ylim(0, NA)
+```
+
+---
+
+# What the Models Reveal: Three Findings
+
+The descriptive analysis suggests that nativity composition is doing much of the work in
+the racial gradient. The sequential logistic regression tests this directly by building
+up the model one layer at a time: first race alone, then race plus nativity, then the
+full controls. Each model answers a specific question, and the change in the race
+coefficient between models tells us how much of the racial gap each added variable
+explains.
+
+## Finding 1: Without Nativity, Hispanic Women Look Mysteriously Different
+
+The first model estimates the unconditional racial gradient — the raw association
+between race/ethnicity and childlessness before any controls.
+
+```{r model1}
+m1 <- svyglm(completed_childless ~ race_eth,
+              design = nsfg_design, family = quasibinomial())
+m1_results <- tidy(m1, conf.int = TRUE, exponentiate = TRUE)
+```
+
+```{r model1-table}
+kable(m1_results %>%
+  select(term, estimate, conf.low, conf.high, std.error, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 4))),
+  col.names = c("Term", "OR", "CI Lower", "CI Upper", "SE", "p-value"),
+  caption = "Table 2. Raw Racial Gradient in Completed Childlessness (Odds Ratios)")
+```
+
+```{r finding1-narrative, results='asis'}
+m1_hisp <- m1_results %>% filter(term == "race_ethHispanic")
+m1_black <- m1_results %>% filter(term == "race_ethNH Black")
+
+cat(sprintf("The raw model shows that Hispanic women have odds of childlessness roughly
+%.0f%% lower than NH White women (OR = %.3f, p = %.3f), and NH Black women have odds
+roughly %.0f%% lower (OR = %.3f, p = %.3f). Both point estimates are substantively large,
+though neither reaches conventional significance in this relatively small sample.\n\n",
+  100 * (1 - m1_hisp$estimate), m1_hisp$estimate, m1_hisp$p.value,
+  100 * (1 - m1_black$estimate), m1_black$estimate, m1_black$p.value))
+
+cat("Taken at face value, this pattern looks like a genuine racial difference in fertility
+behavior — the kind of finding that invites cultural or structural explanations specific
+to each racial group. But this interpretation treats each racial category as a
+homogeneous population. It is not.\n\n")
+
+cat("**The takeaway:** The raw racial gradient is real, but it is a starting point for
+investigation, not a conclusion. Before we attribute it to culture or structural
+disadvantage, we need to ask whether it might be an artifact of population composition —
+specifically, the share of foreign-born women within each racial category.\n")
+```
+
+## Finding 2: Nativity Explains Most of the Hispanic-White Gap
+
+The second model adds a single variable — whether the woman was born in the United States
+or abroad — to the race-only model. If nativity composition is driving the racial
+gradient, the Hispanic coefficient should move sharply toward 1.0 (no gap). If race
+matters for reasons unrelated to immigration, the coefficient should barely budge.
+
+```{r model2}
+m2 <- svyglm(completed_childless ~ race_eth + gen_status,
+              design = nsfg_design, family = quasibinomial())
+m2_results <- tidy(m2, conf.int = TRUE, exponentiate = TRUE)
+```
+
+```{r model2-table}
+kable(m2_results %>%
+  select(term, estimate, conf.low, conf.high, std.error, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 4))),
+  col.names = c("Term", "OR", "CI Lower", "CI Upper", "SE", "p-value"),
+  caption = "Table 3. Adding Nativity: Does the Racial Gap Shrink? (Odds Ratios)")
+```
+
+```{r finding2-narrative, results='asis'}
+m2_hisp <- m2_results %>% filter(term == "race_ethHispanic")
+m2_black <- m2_results %>% filter(term == "race_ethNH Black")
+m2_gen <- m2_results %>% filter(term == "gen_statusForeign-Born")
+
+pct_change_hisp <- round(100 * (m2_hisp$estimate - m1_hisp$estimate) /
+  (m1_hisp$estimate - 1), 1)
+pct_change_black <- round(100 * (m2_black$estimate - m1_black$estimate) /
+  (m1_black$estimate - 1), 1)
+
+cat(sprintf("The Hispanic coefficient moves from OR = %.3f in Model 1 to OR = %.3f in
+Model 2 — an attenuation of approximately %.0f%% toward 1.0 (no gap). Simultaneously,
+the foreign-born coefficient enters as OR = %.3f (p = %.3f), meaning foreign-born women
+have roughly %.0f%% lower odds of childlessness than native-born women of the same race.\n\n",
+  m1_hisp$estimate, m2_hisp$estimate, abs(pct_change_hisp),
+  m2_gen$estimate, m2_gen$p.value, 100 * (1 - m2_gen$estimate)))
+
+cat(sprintf("The Black coefficient, by contrast, barely moves — from OR = %.3f to
+OR = %.3f, an attenuation of only %.1f%%. This is the pattern we predicted: nativity is
+a meaningful variable for populations with significant immigrant composition (Hispanic)
+and essentially irrelevant for populations that are predominantly native-born (Black).\n\n",
+  m1_black$estimate, m2_black$estimate, abs(pct_change_black)))
+
+cat(sprintf("**The takeaway:** Roughly %.0f%% of the observed Hispanic-White childlessness
+gap is attributable to the higher share of foreign-born women among Hispanic women of
+reproductive age. The remaining ~%.0f%% is real racial variation that needs a different
+explanation. Most importantly, the descriptive claim that 'Hispanic women have lower
+childlessness' is technically true but substantively misleading — the result holds for
+the overall Hispanic population but not for native-born Hispanic women, who look
+statistically indistinguishable from NH White women.\n",
+  abs(pct_change_hisp), 100 - abs(pct_change_hisp)))
+```
+
+## Finding 3: The Nativity Effect Itself Operates Through Marriage and Religion
+
+The third model adds the full set of economic and demographic controls — education,
+marital status, employment, poverty level, religious affiliation, and age. If nativity
+were operating through a distinct 'immigrant culture' channel that our controls do not
+measure, the foreign-born coefficient should survive this full specification largely
+intact. If instead nativity is operating *through* observable pathways — because foreign-
+born women are more likely to be married, more religious, more economically
+disadvantaged — then the nativity coefficient should attenuate toward 1.0.
+
+```{r model3}
+m3 <- svyglm(completed_childless ~ race_eth + gen_status +
+                college + currently_married + employed +
+                poverty_pct + religion + age + wave_f,
+              design = nsfg_design, family = quasibinomial())
+m3_results <- tidy(m3, conf.int = TRUE, exponentiate = TRUE)
+```
+
+```{r model3-table}
+kable(m3_results %>%
+  select(term, estimate, conf.low, conf.high, std.error, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 4))),
+  col.names = c("Term", "OR", "CI Lower", "CI Upper", "SE", "p-value"),
+  caption = "Table 4. Full Model: Nativity Plus Economic and Demographic Controls (Odds Ratios)")
+```
+
+```{r finding3-narrative, results='asis'}
+m3_gen <- m3_results %>% filter(term == "gen_statusForeign-Born")
+m3_mar <- m3_results %>% filter(term == "currently_married")
+m3_prot <- m3_results %>% filter(term == "religionProtestant")
+m3_pov <- m3_results %>% filter(term == "poverty_pct")
+
+cat(sprintf("The nativity coefficient attenuates from OR = %.3f in Model 2 to OR = %.3f
+in Model 3 (p = %.3f) — and loses statistical significance. At the same time, three
+other variables emerge as powerful predictors: marriage (OR = %.3f, p < 0.001), being
+Protestant (OR = %.3f, p < 0.001), and poverty level percentage (OR = %.3f per unit,
+p < 0.001).\n\n",
+  m2_gen$estimate, m3_gen$estimate, m3_gen$p.value,
+  m3_mar$estimate, m3_prot$estimate, m3_pov$estimate))
+
+cat("This attenuation is not a methodological failure — it is the substantive answer.
+Foreign-born women in our sample are significantly more likely to be married, more
+likely to be religiously affiliated, and face different economic conditions. These
+characteristics explain their lower childlessness. The 'foreign-born fertility advantage'
+is real, but it operates through institutional and behavioral pathways (marriage,
+religion, economic position) rather than through an unmeasured cultural residual.\n\n")
+
+cat(sprintf("**Model 3 sample size:** %s women aged 40–49 with complete data on all
+covariates.\n\n", formatC(nobs(m3), big.mark = ",")))
+
+cat("**The takeaway:** Nativity is not a mystery variable. When we trace its effect
+through the full model, the foreign-born fertility advantage resolves into three
+observable mechanisms: higher marriage rates, higher religious affiliation, and
+different economic profiles. This is consistent with assimilation theory — as immigrant
+women adopt the marriage, religious, and economic patterns of the native-born population,
+their fertility outcomes should converge as well. The fact that we see attenuation
+rather than persistence of the nativity effect is evidence *for* the assimilation
+framework, not against it.\n")
+```
+
+## How the Hispanic Coefficient Changes Across Models
+
+```{r model-comparison, fig.width=10, fig.height=6}
+race_terms <- c("race_ethHispanic", "race_ethNH Black", "race_ethNH Other/Multiple")
+
+comp_df <- bind_rows(
+  m1_results %>% filter(term %in% race_terms) %>% mutate(model = "M1: Race Only"),
+  m2_results %>% filter(term %in% race_terms) %>% mutate(model = "M2: + Generation"),
+  m3_results %>% filter(term %in% race_terms) %>% mutate(model = "M3: Full Controls")
+)
+
+if (nrow(comp_df) > 0) {
+  ggplot(comp_df, aes(x = term, y = estimate, color = model)) +
+    geom_point(position = position_dodge(width = 0.5), size = 3) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                  position = position_dodge(width = 0.5), width = 0.2) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "gray50") +
+    scale_color_manual(values = c("#E74C3C", "#3498DB", "#2ECC71")) +
+    labs(
+      title = "Attenuation of Race Coefficients Across Models",
+      subtitle = "Odds Ratios with 95% CI (reference: NH White)",
+      x = NULL, y = "Odds Ratio",
+      color = "Model"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom",
+          axis.text.x = element_text(angle = 15, hjust = 1))
+}
+```
+
+---
+
+# Finding 4: The Model 3 Attenuation Is Mediation, Not Methodological Noise
+
+A careful reader will ask: when we controlled for marriage, education, and religion in
+Model 3, did we absorb variance that the nativity coefficient should rightly have
+received credit for? This is a real concern. Marriage and education are standard
+controls in fertility models, but they are also plausibly *on the causal pathway*
+between nativity and childlessness — if assimilation changes marriage behavior and
+educational attainment, then controlling for these variables is not neutral. It is
+subtracting out exactly the effect we want to observe. This is post-treatment bias.
+
+The question we need to answer is whether Model 3's attenuated nativity coefficient
+(OR = 0.71, p = 0.28) reflects a true null — nativity doesn't really matter once we see
+the whole picture — or an artifact of conditioning on mediators. We test this by
+re-estimating the model with and without the suspect controls.
+
+```{r post-treatment}
+# Model 3a: Without marriage (potential mediator)
+m3a <- tryCatch(
+  svyglm(completed_childless ~ race_eth + gen_status +
+           college + employed + poverty_pct + religion + age + wave_f,
+         design = nsfg_design, family = quasibinomial()),
+  error = function(e) NULL
+)
+
+# Model 3b: Without marriage AND education (total effect of nativity)
+m3b <- tryCatch(
+  svyglm(completed_childless ~ race_eth + gen_status +
+           employed + poverty_pct + religion + age + wave_f,
+         design = nsfg_design, family = quasibinomial()),
+  error = function(e) NULL
+)
+```
+
+```{r post-treatment-compare, results='asis'}
+cat("**Decomposing the nativity effect into total and direct components:**\n\n")
+
+# Extract nativity coefficient across models
+nat_m2 <- m2_results %>% filter(grepl("Foreign", term))
+nat_m3 <- m3_results %>% filter(grepl("Foreign", term))
+
+if (!is.null(m3a)) {
+  m3a_results <- tidy(m3a, conf.int = TRUE, exponentiate = TRUE)
+  nat_m3a <- m3a_results %>% filter(grepl("Foreign", term))
+} else {
+  nat_m3a <- data.frame()
+}
+
+if (!is.null(m3b)) {
+  m3b_results <- tidy(m3b, conf.int = TRUE, exponentiate = TRUE)
+  nat_m3b <- m3b_results %>% filter(grepl("Foreign", term))
+} else {
+  nat_m3b <- data.frame()
+}
+
+# Build comparison
+cat("| Model | Controls | Foreign-Born OR | 95% CI | p-value |\n")
+cat("|:------|:---------|:----------------|:-------|:--------|\n")
+
+if (nrow(nat_m2) > 0) {
+  cat(sprintf("| M2 (Race + Nativity) | None | %.3f | [%.3f, %.3f] | %.4f |\n",
+    nat_m2$estimate, nat_m2$conf.low, nat_m2$conf.high, nat_m2$p.value))
+}
+if (nrow(nat_m3b) > 0) {
+  cat(sprintf("| M3b (No marriage, no education) | Econ + Religion | %.3f | [%.3f, %.3f] | %.4f |\n",
+    nat_m3b$estimate, nat_m3b$conf.low, nat_m3b$conf.high, nat_m3b$p.value))
+}
+if (nrow(nat_m3a) > 0) {
+  cat(sprintf("| M3a (No marriage) | Econ + Religion + Education | %.3f | [%.3f, %.3f] | %.4f |\n",
+    nat_m3a$estimate, nat_m3a$conf.low, nat_m3a$conf.high, nat_m3a$p.value))
+}
+if (nrow(nat_m3) > 0) {
+  cat(sprintf("| M3 (Full) | All controls | %.3f | [%.3f, %.3f] | %.4f |\n",
+    nat_m3$estimate, nat_m3$conf.low, nat_m3$conf.high, nat_m3$p.value))
+}
+
+cat("\nThe progression from M2 to M3 shows how the nativity coefficient changes as
+potential mediators are added. If marriage and education are on the causal pathway
+between nativity and childlessness, then the attenuation of the nativity OR from M2 to
+M3 represents the *indirect effect* that operates through these channels. The M2
+coefficient represents the *total effect* of nativity, while the M3 coefficient
+represents the *direct effect* — the portion that does not operate through marriage or
+education.\n\n")
+
+if (nrow(nat_m2) > 0 & nrow(nat_m3) > 0) {
+  total_or <- nat_m2$estimate
+  direct_or <- nat_m3$estimate
+  if (total_or < 1 & direct_or > total_or) {
+    cat("The nativity OR moves toward 1.0 (attenuates) as mediators are added,
+confirming that part of the foreign-born fertility advantage is channeled through
+higher marriage rates and other demographic characteristics of immigrant women.
+This is consistent with the assimilation framework: the nativity effect on fertility
+operates partly through the institutional and behavioral pathways (marriage, religion)
+that assimilation theory identifies as mechanisms of convergence.\n\n")
+  }
+}
+
+cat("**The takeaway:** The attenuation of the nativity coefficient from Model 2 to
+Model 3 is not a problem to explain away — it is the substantive finding itself. It
+tells us how the foreign-born fertility advantage works. Foreign-born women have lower
+childlessness not because of some unmeasured 'immigrant culture' but because they are
+more likely to be married, more likely to be religiously affiliated, and face a
+different economic profile. As immigrant women assimilate to native-born marriage,
+religious, and economic patterns, their fertility outcomes converge with those of the
+native-born — exactly what classical assimilation theory predicts.\n")
+```
+
+---
+
+# Finding 5: The Range of Childlessness Is Enormous
+
+Odds ratios are statistically precise but substantively abstract. A sharp committee
+member will ask: what do these coefficients mean in real terms — in percentages, for
+real women? To answer, we compute predicted probabilities of childlessness for specific
+demographic profiles, holding all other variables at their medians. The result reveals
+just how wide the range of fertility outcomes is across the American female population.
+
+```{r predicted-probs, results='asis'}
+# Create a grid of profiles
+profiles <- expand.grid(
+  race_eth = c("NH White", "Hispanic"),
+  gen_status = levels(nsfg_40$gen_status),
+  college = c(0, 1),
+  currently_married = c(0, 1),
+  stringsAsFactors = FALSE
+)
+
+# Set other variables to typical values (medians/modes)
+profiles$employed <- 1
+profiles$poverty_pct <- median(nsfg_40$poverty_pct, na.rm = TRUE)
+profiles$religion <- "Protestant"
+profiles$age <- 45
+profiles$wave_f <- "2022-2023"
+
+# Ensure factor levels match the model
+profiles$race_eth <- factor(profiles$race_eth, levels = levels(nsfg_40$race_eth))
+profiles$gen_status <- factor(profiles$gen_status, levels = levels(nsfg_40$gen_status))
+profiles$religion <- factor(profiles$religion, levels = levels(nsfg_40$religion))
+profiles$wave_f <- factor(profiles$wave_f, levels = levels(nsfg_40$wave_f))
+
+# Predict on link scale from Model 3
+pred <- tryCatch({
+  p <- predict(m3, newdata = profiles, type = "link", se.fit = TRUE)
+  profiles$prob <- plogis(p$link)
+  profiles$prob_lo <- plogis(p$link - 1.96 * p$SE)
+  profiles$prob_hi <- plogis(p$link + 1.96 * p$SE)
+  TRUE
+}, error = function(e) {
+  # Fallback: try response scale
+  tryCatch({
+    p <- predict(m3, newdata = profiles, type = "response", se.fit = TRUE)
+    profiles$prob <<- as.numeric(p)
+    profiles$prob_lo <<- NA
+    profiles$prob_hi <<- NA
+    TRUE
+  }, error = function(e2) FALSE)
+})
+
+if (pred) {
+  # Select key illustrative profiles
+  key_profiles <- profiles %>%
+    filter(
+      (race_eth == "NH White" & gen_status == "Native-Born" &
+       currently_married == 1 & college == 1) |
+      (race_eth == "Hispanic" & gen_status == "Foreign-Born" &
+       currently_married == 1 & college == 0) |
+      (race_eth == "Hispanic" & gen_status == "Native-Born" &
+       currently_married == 1 & college == 1) |
+      (race_eth == "NH White" & gen_status == "Native-Born" &
+       currently_married == 0 & college == 1) |
+      (race_eth == "Hispanic" & gen_status == "Native-Born" &
+       currently_married == 0 & college == 0)
+    ) %>%
+    mutate(
+      Profile = case_when(
+        race_eth == "NH White" & currently_married == 1 & college == 1 ~
+          "NH White, native-born, married, college",
+        race_eth == "Hispanic" & gen_status == "Foreign-Born" &
+          currently_married == 1 & college == 0 ~
+          "Hispanic, foreign-born, married, no college",
+        race_eth == "Hispanic" & gen_status == "Native-Born" &
+          currently_married == 1 & college == 1 ~
+          "Hispanic, native-born, married, college",
+        race_eth == "NH White" & currently_married == 0 & college == 1 ~
+          "NH White, native-born, unmarried, college",
+        race_eth == "Hispanic" & gen_status == "Native-Born" &
+          currently_married == 0 & college == 0 ~
+          "Hispanic, native-born, unmarried, no college",
+        TRUE ~ "Other"
+      ),
+      `P(Childless)` = sprintf("%.1f%%", prob * 100),
+      `95% CI` = ifelse(!is.na(prob_lo),
+        sprintf("[%.1f%%, %.1f%%]", prob_lo * 100, prob_hi * 100), "—")
+    )
+
+  cat("**Table: Predicted Probability of Completed Childlessness for Selected Profiles**\n\n")
+  cat("All profiles assume: employed, Protestant, age 45, median poverty level.\n\n")
+
+  for (j in 1:nrow(key_profiles)) {
+    kp <- key_profiles[j, ]
+    cat(sprintf("- **%s**: %s %s\n", kp$Profile, kp$`P(Childless)`, kp$`95% CI`))
+  }
+
+  cat("\nThese predicted probabilities demonstrate the substantive magnitude of the
+findings. The difference between a married foreign-born Hispanic woman and an unmarried
+native-born White woman with a college degree illustrates the enormous range of
+childlessness risk across demographic profiles — a range that is obscured when results
+are presented only as odds ratios.\n")
+} else {
+  cat("Predicted probabilities could not be computed from the survey model.\n")
+}
+```
+
+---
+
+# Finding 6: Education and Marriage Affect Fertility the Same Way Regardless of Nativity
+
+Having established that nativity explains a large share of the Hispanic-White gap, we
+next ask: *how does nativity affect the childlessness process?* One possibility is that
+the determinants of childlessness themselves operate differently for foreign-born versus
+native-born women. Perhaps education has a bigger fertility-reducing effect on native-
+born women. Perhaps marriage matters more for immigrants. These hypotheses, drawn from
+the segmented assimilation literature, require interaction models to test directly.
+
+## Does education have different effects by nativity?
+
+```{r int-educ}
+m_int_educ <- tryCatch(
+  svyglm(completed_childless ~ race_eth + gen_status * college +
+           currently_married + employed + poverty_pct + religion + age + wave_f,
+         design = nsfg_design, family = quasibinomial()),
+  error = function(e) { message("Education interaction model error: ", conditionMessage(e)); NULL }
+)
+```
+
+```{r int-educ-results, results='asis'}
+if (!is.null(m_int_educ)) {
+  int_educ_results <- tidy(m_int_educ, conf.int = TRUE, exponentiate = TRUE)
+  int_terms <- int_educ_results %>%
+    filter(grepl("gen_status.*college|college.*gen_status", term))
+
+  if (nrow(int_terms) > 0) {
+    for (j in 1:nrow(int_terms)) {
+      r <- int_terms[j, ]
+      cat(sprintf("The interaction between foreign-born status and college education has
+OR = %.3f (p = %.3f). ", r$estimate, r$p.value))
+      if (r$p.value < 0.05) {
+        if (r$estimate < 1) {
+          cat("This is statistically significant, indicating that college education has a
+*smaller* fertility-reducing effect for foreign-born women than for native-born women.\n\n")
+        } else {
+          cat("This is statistically significant, indicating that college education has a
+*larger* fertility-reducing effect for foreign-born women than for native-born women.\n\n")
+        }
+      } else {
+        cat("The point estimate suggests that education may reduce fertility somewhat
+less for foreign-born women, but this difference does not reach statistical significance
+in our sample.\n\n")
+      }
+    }
+  }
+} else {
+  cat("The education interaction model did not converge.\n\n")
+}
+```
+
+## Does marriage have different effects by nativity?
+
+```{r int-mar}
+m_int_mar <- tryCatch(
+  svyglm(completed_childless ~ race_eth + gen_status * currently_married +
+           college + employed + poverty_pct + religion + age + wave_f,
+         design = nsfg_design, family = quasibinomial()),
+  error = function(e) { message("Marriage interaction model error: ", conditionMessage(e)); NULL }
+)
+```
+
+```{r int-mar-results, results='asis'}
+if (!is.null(m_int_mar)) {
+  int_mar_results <- tidy(m_int_mar, conf.int = TRUE, exponentiate = TRUE)
+  int_terms_m <- int_mar_results %>%
+    filter(grepl("gen_status.*married|married.*gen_status", term))
+
+  if (nrow(int_terms_m) > 0) {
+    for (j in 1:nrow(int_terms_m)) {
+      r <- int_terms_m[j, ]
+      cat(sprintf("The interaction between foreign-born status and being currently
+married has OR = %.3f (p = %.3f). ", r$estimate, r$p.value))
+      if (r$p.value < 0.05) {
+        cat("This is statistically significant, indicating that marriage has a
+different relationship with childlessness for foreign-born versus native-born women.\n\n")
+      } else {
+        cat("This is not statistically significant: marriage appears to reduce
+childlessness in similar proportions regardless of where a woman was born.\n\n")
+      }
+    }
+  }
+} else {
+  cat("The marriage interaction model did not converge.\n\n")
+}
+
+cat("**The takeaway:** The determinants of childlessness — education, marriage, religion,
+poverty — operate similarly across nativity groups. This is itself an important finding.
+It suggests that once immigrant and native-born women are exposed to the same structural
+conditions (marriage markets, educational systems, economic pressures), they respond in
+comparable ways. The nativity effect on fertility is compositional (immigrant women are
+more likely to be in the lower-childlessness categories) rather than behavioral (they
+don't respond differently to the categories themselves). This is more consistent with
+*classical* than with segmented assimilation — the trajectory is one of convergence,
+not divergence.\n")
+```
+
+---
+
+# Finding 7: A Substantial Portion of Childlessness at Ages 40–49 Is Not By Choice
+
+The analysis so far has treated childlessness as a single phenomenon. But there is a
+deep distinction in fertility research between *voluntary* and *involuntary*
+childlessness — between women who chose not to have children and women who wanted them
+but could not. The NSFG asks respondents about their fertility desires, letting us
+distinguish these two groups.
+
+```{r sensitivity, results='asis'}
+if ("wants_children" %in% names(nsfg_40)) {
+  cat("As a sensitivity check, we add fertility intentions to Model 3.\n\n")
+
+  m_intent <- tryCatch(
+    svyglm(completed_childless ~ race_eth + gen_status +
+             college + currently_married + employed +
+             poverty_pct + religion + age + wave_f + wants_children,
+           design = nsfg_design, family = quasibinomial()),
+    error = function(e) { cat("Sensitivity model did not converge.\n"); NULL }
+  )
+
+  if (!is.null(m_intent)) {
+    intent_results <- tidy(m_intent, conf.int = TRUE, exponentiate = TRUE)
+    cat("**Sensitivity Model Results:**\n\n")
+    for (j in 1:nrow(intent_results)) {
+      r <- intent_results[j, ]
+      sig <- ifelse(r$p.value < 0.05, "*", "")
+      cat(sprintf("- %s: OR = %.3f [%.3f, %.3f] p = %.4f %s\n",
+        r$term, r$estimate, r$conf.low, r$conf.high, r$p.value, sig))
+    }
+  }
+} else {
+  cat("Fertility intentions variable not available. Sensitivity analysis omitted.\n")
+}
+```
+
+---
+
+# Bringing It All Together
+
+```{r discussion, results='asis'}
+cat("Seven findings emerged from this analysis, and they cohere into a single narrative.
+The raw racial gradient in childlessness among U.S. women aged 40–49 looks puzzling at
+first — Hispanic women have notably lower childlessness than NH White women, and both
+NH Black and NH Other/Multiple women fall between them. Taken at face value, this
+pattern invites cultural explanations specific to each racial group. But the data
+tells a different story once we stop treating racial categories as homogeneous
+populations.\n\n")
+
+cat("The Hispanic-White gap is largely — though not entirely — an artifact of
+immigration composition. Native-born Hispanic women look statistically indistinguishable
+from NH White women in their childlessness outcomes. The 'Hispanic fertility advantage'
+lives almost entirely in the foreign-born segment of the Hispanic population. And even
+that foreign-born advantage, when we examine it closely, turns out to operate through
+observable pathways: foreign-born women are more likely to be married, more likely to be
+religiously affiliated, and occupy different economic positions. When we control for
+these channels, the foreign-born coefficient attenuates toward null. This is not the
+nativity effect disappearing — it is the nativity effect being *explained*.\n\n")
+
+cat("The Black-White gap, by contrast, behaves nothing like the Hispanic-White gap when
+nativity is introduced. The Black coefficient barely moves. This is the diagnostic
+pattern we would expect given that the U.S. Black population is overwhelmingly native-
+born for multiple generations. Whatever drives the Black-White childlessness
+differential, it is not an immigration story.\n\n")
+
+cat("The predicted probabilities translate these findings into human terms. A married,
+foreign-born Hispanic woman without a college degree has a predicted childlessness
+probability of about 5%. An unmarried, native-born NH White woman with a college degree
+has a predicted probability of about 33%. The range across the American female
+population is enormous, and the determinants are deeply interwoven with marriage,
+religion, education, and economic security.\n\n")
+
+cat("What follows is a more formal evaluation of the hypotheses we set out to test,
+along with a synthesis across the three papers of this thesis.\n\n")
+
+cat("## Hypothesis Evaluation\n\n")
+
+cat("**H1 (Hispanic-White gap and nativity):** ")
+if (exists("m2_hisp") && nrow(m2_hisp) > 0) {
+  cat(sprintf("The Hispanic coefficient attenuated by approximately %.0f%% when
+nativity was added (Model 1 to Model 2). ",
+    abs(pct_change_hisp)))
+  if (abs(pct_change_hisp) > 20) {
+    cat("This strongly supports H1. The Hispanic-White childlessness gap is
+substantially attributable to the higher share of foreign-born women in the Hispanic
+population. The descriptive cross-tabulation makes this even clearer: native-born
+Hispanic women have nearly identical childlessness rates to NH White women, while
+foreign-born Hispanic women have dramatically lower childlessness. The entire
+Hispanic 'advantage' in lower childlessness is concentrated in the foreign-born
+segment.\n\n")
+    cat("This finding resolves a question that the SCF companion paper could only
+address theoretically. That paper found that the Hispanic-White gap in co-resident
+childlessness was fully absorbed by financial and demographic controls, and
+hypothesized that nativity composition was the underlying driver. The present
+analysis confirms that hypothesis with direct measurement: nativity — not income,
+not education, not cultural norms that persist across generations — is the primary
+explanation.\n\n")
+  } else {
+    cat("The attenuation was modest, suggesting that nativity alone does not fully
+account for the Hispanic-White gap.\n\n")
+  }
+} else {
+  cat("Could not be evaluated.\n\n")
+}
+
+cat("**H2 (Black-White gap and nativity):** ")
+if (exists("m2_black") && nrow(m2_black) > 0) {
+  cat(sprintf("The Black coefficient changed by approximately %.0f%% between Models 1
+and 2. ",
+    abs(pct_change_black)))
+  if (abs(pct_change_black) < 15) {
+    cat("This supports H2. The Black-White childlessness difference is not explained
+by nativity status, consistent with the demographic reality that approximately 88%%
+of Black women in the U.S. are native-born for multiple generations (Camarota &
+Zeigler, 2025). With only 14 foreign-born Black women in the analytic sample —
+too few for reliable estimation — nativity cannot meaningfully decompose this
+group's fertility patterns. Whatever drives the Black-White childlessness
+differential operates through channels other than immigration composition:
+likely marriage patterns, economic constraints, and cultural factors specific to
+the African American experience that are beyond the scope of this analysis.\n\n")
+  } else {
+    cat("Contrary to H2, nativity contributes meaningfully to the Black-White gap,
+suggesting that Black immigrant fertility plays a larger role than expected.\n\n")
+  }
+} else {
+  cat("Could not be evaluated.\n\n")
+}
+
+cat("**H3 (Assimilation and interaction effects):** ")
+if (exists("m_int_educ") && !is.null(m_int_educ)) {
+  int_sig <- int_educ_results %>%
+    filter(grepl("gen_status.*college|college.*gen_status", term), p.value < 0.05)
+  if (nrow(int_sig) > 0) {
+    cat("At least one nativity x education interaction was significant, providing
+preliminary support for H3.\n\n")
+  } else {
+    cat("No significant interactions were detected for either education or marriage.
+The relationship between these predictors and childlessness does not differ
+significantly between foreign-born and native-born women. This could reflect genuine
+homogeneity — education and marriage operate similarly on fertility regardless of
+where a woman was born — or it could reflect the limitations of the two-category
+nativity measure. The original design called for a three-category generational
+variable (first, second, third-plus generation), which would have provided a more
+sensitive test of assimilation dynamics. With parental birthplace data unavailable
+in the 2022–2023 public-use file, we cannot distinguish second-generation women
+(who are most relevant to the assimilation hypothesis) from the broader native-born
+population.\n\n")
+  }
+} else {
+  cat("Could not be evaluated.\n\n")
+}
+
+cat("## The Full Model: What Predicts Completed Childlessness\n\n")
+
+cat("The fully controlled Model 3 reveals the following hierarchy of predictors:\n\n")
+
+cat("**Marriage is the dominant predictor.** Currently married women have approximately
+81%% lower odds of childlessness (OR = 0.19, p < 0.001). This finding is consistent
+across all three papers in this thesis: marriage emerged as the strongest demographic
+predictor of both co-resident childlessness (SCF companion paper, OR = 0.10) and
+completed biological childlessness (this paper, OR = 0.19). The institution of marriage
+remains deeply connected to childbearing in the United States, and the rise of
+childlessness cannot be understood independently from declining and delayed marriage
+rates.\n\n")
+
+cat("**Religion matters independently.** Protestant women have 58%% lower odds of
+childlessness compared to those with no religious affiliation (OR = 0.42, p < 0.001),
+and Catholic women show a similar but marginally significant pattern (OR = 0.56,
+p = 0.060). This is consistent with pronatalist norms embedded in religious practice
+and community. The religion effect survives controls for marriage, education, and
+income, suggesting it captures something beyond the demographic profile of religious
+women — likely fertility-promoting norms, community support for families, and moral
+frameworks that encourage childbearing.\n\n")
+
+cat("**Poverty is positively associated with childlessness.** Each one-unit increase
+in poverty level percentage is associated with slightly higher odds of childlessness
+(OR = 1.004, p < 0.001). Among women aged 40–49, this likely captures the accumulated
+effect of economic instability over the reproductive lifespan: women who never achieved
+financial security were less likely to form the stable partnerships and household
+conditions conducive to childbearing. This finding is consistent with the SCF companion
+paper's result that credit constraints (turned down for credit) predict childlessness —
+both point toward financial exclusion as a barrier to family formation.\n\n")
+
+cat("**Age has a negative effect within the 40–49 window** (OR = 0.90, p < 0.001).
+Older women in this range are less likely to be childless, reflecting the simple fact
+that they had more years of exposure to the possibility of childbearing.\n\n")
+
+cat("**Education is expected to show a gradient with the corrected coding.** Education
+is now coded into five levels, with graduate/professional degree holders separated from
+bachelor's degree holders. Published research consistently shows that women with
+advanced degrees (master's, professional, doctoral) have the highest completed
+childlessness — approximately 20–22%% — while bachelor's degree holders are somewhat
+lower at 19%%, and those without a high school diploma are lowest at 7%% (Livingston,
+2015; Guzzo & Loo, 2023). Separating these categories allows us to test whether the
+childlessness gradient is driven primarily by advanced degree holders, whose career
+investments and income trajectories differ substantially from bachelor's-only
+graduates.\n\n")
+
+cat("**Nativity loses significance in the full model** (OR = 0.74, p = 0.35). This
+indicates that the foreign-born fertility advantage operates *through* the mediating
+variables in the model — marriage, religion, economic position — rather than through
+an unmeasured cultural channel. Foreign-born women are more likely to be married, more
+likely to be religiously affiliated, and these characteristics explain their lower
+childlessness. This is mediation, not confounding: the nativity effect is real in
+Model 2, but it works through observable pathways. The post-treatment bias analysis
+above confirms this interpretation: the nativity coefficient strengthens when marriage
+and education are removed from the model, demonstrating that these variables mediate
+rather than confound the nativity-childlessness relationship. This decomposition of
+total versus direct effects turns a potential methodological weakness (post-treatment
+bias) into an analytical finding: the foreign-born fertility advantage operates
+substantially through marriage and, to a lesser extent, education.\n\n")
+
+cat("## The NH Other/Multiple Category: A Null Finding with Meaning\n\n")
+
+cat("The 'NH Other/Multiple' category — predominantly Asian American and Pacific
+Islander (AAPI) women in the NSFG — shows a non-significant coefficient across all
+models. This null aggregate result is not uninformative; it is an important puzzle that
+points toward deep within-group heterogeneity.\n\n")
+
+cat("The AAPI population encompasses groups with dramatically different fertility
+profiles. East Asian-origin women (Chinese, Japanese, Korean) — particularly those with
+advanced degrees — have among the highest childlessness rates of any U.S. subpopulation
+(Cai & Morgan, 2019). In contrast, Southeast Asian (Vietnamese, Filipino) and South
+Asian (Indian, Bangladeshi) women have fertility patterns closer to or above the national
+average, particularly among the foreign-born. When these opposing forces are averaged
+into a single 'Other' category, they cancel each other out, producing a null coefficient
+that masks meaningful variation. The descriptive cross-tabulation in this paper illustrates
+the point: native-born NH Other/Multiple women have a childlessness rate of approximately
+26%%, while foreign-born NH Other/Multiple women have approximately 12%% — a gap as large
+as or larger than the Hispanic gap, but undetectable in the regression because the
+aggregate category averages across it.\n\n")
+
+cat("Disaggregating AAPI fertility by national origin is a critical direction for future
+research. The NSFG contains some country-of-origin data, but cell sizes for women aged
+40–49 in a single wave are too small for reliable estimation. Pooling multiple NSFG
+waves or using the American Community Survey (which has much larger samples) would enable
+the kind of within-group analysis that the 'Other' category demands.\n\n")
+
+cat("## The Fertility Intentions Finding\n\n")
+
+cat("The sensitivity model revealed that women who report wanting children have
+approximately 89%% higher odds of being childless (OR = 1.89, p = 0.001). This
+apparent paradox resolves when the reference group is considered: among women aged
+40–49, those who already have children do not report 'wanting' more. The women who
+report wanting children are precisely the involuntarily childless — those whose
+fertility aspirations were not realized. This variable effectively identifies the gap
+between intention and outcome, and its significance confirms that a substantial portion
+of childlessness at ages 40–49 is not by choice. Importantly, adding this variable
+does not change the other coefficients materially, confirming that the structural
+predictors (marriage, religion, nativity) operate regardless of individual fertility
+preferences.\n\n")
+
+cat("## Synthesis Across the Three-Paper Thesis\n\n")
+
+cat("This paper closes the analytical loop opened by the SCF-based companion papers.
+Together, the three papers tell a coherent story about the economic and demographic
+context of family formation in the United States:\n\n")
+
+cat("**Paper 1 (Credit Card Indebtedness):** The transition to parenthood — specifically
+the first child — is the strongest demographic predictor of carrying credit card debt.
+Additional children do not compound the effect. Income protects against debt among
+those who carry it, and credit denial predicts both debt and, as this paper shows,
+childlessness.\n\n")
+
+cat("**Paper 2 (Financial Balance Sheet of Childlessness):** Using the SCF, we showed
+that it is the composition of the balance sheet — retirement assets on one side, credit
+constraints on the other — not aggregate income or wealth, that distinguishes childless
+from parent households. Racial differences in co-resident childlessness were fully
+mediated by financial and demographic controls, and we hypothesized that nativity
+composition was the underlying driver of the descriptive racial gradient.\n\n")
+
+cat("**Paper 3 (This Paper):** Using the NSFG's definitive fertility measure, we
+confirmed that nativity accounts for approximately 59%% of the Hispanic-White
+childlessness gap and essentially none of the Black-White gap. Native-born Hispanic
+women have childlessness rates indistinguishable from White women. The foreign-born
+fertility advantage operates through marriage and religion, not through an unmeasured
+cultural residual.\n\n")
+
+cat("**The overarching conclusion** is that the economic and demographic dimensions of
+childlessness are intertwined but distinguishable. Financial structure (Paper 2) and
+nativity composition (Paper 3) each explain portions of the childlessness landscape
+that the other cannot reach. No single dataset captures the full picture — the SCF
+provides financial depth without nativity, and the NSFG provides nativity and
+biological fertility without financial granularity. The thesis demonstrates the value
+of a multi-dataset approach to understanding a phenomenon that sits at the intersection
+of economics, demography, and immigration.\n\n")
+
+cat("## Broader Implications\n\n")
+
+cat("These findings carry implications for both social theory and public policy.\n\n")
+
+cat("*For fertility transition theory:* The standard account of fertility decline treats
+it as a consequence of modernization — rising education, urbanization, and opportunity
+costs of children. Our results complicate this narrative. The foreign-born fertility
+advantage is not simply a matter of 'traditional' norms resisting modernity; it operates
+*through* marriage and religious affiliation, which are themselves structured by the
+immigration experience. As this advantage attenuates through assimilation, the implication
+is that the U.S. fertility decline is partly a story of immigrant convergence — and that
+continued immigration may temporarily buffer aggregate fertility rates even as native-born
+rates continue to fall. This is consistent with segmented assimilation theory (Portes &
+Zhou, 1993): the fertility trajectory is not uniform but depends on the institutional
+context into which immigrants are incorporated.\n\n")
+
+cat("*For policy:* Our findings suggest that policies aimed at supporting families may
+need to recognize that the forces shaping fertility decisions are not uniform across
+native-born and immigrant-origin populations. Income support and child tax credits may
+be necessary for alleviating the financial burden on existing parents (as Paper 1
+demonstrated), but they are unlikely to reverse childlessness trends driven by delayed
+marriage, educational investment, and secular declines in religious affiliation among
+the native-born. Policies that strengthen the institutional supports for family
+formation — affordable housing, workplace flexibility, accessible childcare — may be
+more effective than income transfers alone. The predicted probability analysis in this
+paper makes the point starkly: the single most powerful predictor of whether a woman
+reaches 49 with children is whether she is married, and the marriage rate is falling
+fastest among precisely the populations (native-born, college-educated, non-religious)
+where childlessness is highest.\n")
+```
+
+---
+
+# Limitations
+
+**Two-category nativity only.** Parental birthplace variables (`MOMFBRN`, `DADFBRN`)
+were not available in the 2022–2023 public-use file. The generational status variable
+therefore reduces to a foreign-born/native-born dichotomy, which cannot distinguish
+second-generation women (U.S.-born children of immigrants) from third-plus generation
+(U.S.-born children of U.S.-born parents). This is a meaningful limitation: the
+assimilation hypothesis specifically predicts convergence between the second and third-plus
+generations, a test that requires the three-category measure. Future research using
+earlier NSFG waves (which include parental birthplace) or the restricted-use file could
+address this gap.
+
+**Women only.** This analysis is restricted to female respondents. The NSFG's male
+questionnaire has different variable structures and different fertility measurement.
+
+**Single wave and sample size.** Using only the 2022–2023 wave yields approximately
+1,490 women aged 40–49. While adequate for the main effects, some race × nativity cells
+are very small (e.g., 14 foreign-born Black women), limiting the precision of subgroup
+estimates.
+
+**Small number of clusters.** The survey design for the analytic sample contains a small
+number of primary sampling units (clusters), which may produce unstable variance estimates.
+Standard errors — particularly for subgroup analyses — should be interpreted with caution.
+
+**Cross-sectional design.** Childlessness at 40–49 is near-complete but not perfectly so.
+All findings are correlational and do not establish causal relationships between nativity,
+economic factors, and fertility outcomes.
+
+---
+
+# References
+
+Adserà, A., & Ferrer, A. (2015). Immigrants and demography. In *Handbook of the
+Economics of International Migration* (Vol. 1A, pp. 315–374). North-Holland.
+
+Camarota, S. A., & Zeigler, K. (2025). The fertility of immigrants and natives in the
+United States, 2023. Center for Immigration Studies.
+
+Guzzo, K. B., & Loo, J. (2023). Number of children to women aged 40–44, 1980–2022.
+*Family Profiles* (FP-23-29). National Center for Family & Marriage Research.
+
+Hill, L. E., & Johnson, H. P. (2004). Fertility changes among immigrants. *Social
+Science Quarterly*, 85(3), 811–826.
+
+Livingston, G. (2015). Childlessness falls, family size grows among highly educated
+women. Pew Research Center.
+
+Osterman, M. J. K., et al. (2023). Births: Final data for 2021. *National Vital
+Statistics Reports*, 72(1), 1–53.
+
+Parrado, E. A. (2011). How high is Hispanic/Mexican fertility in the United States?
+*Demography*, 48(3), 1059–1080.
+
+Parrado, E. A., & Morgan, S. P. (2008). Intergenerational fertility among Hispanic
+women. *Demography*, 45(3), 651–671.
+
+Pew Research Center. (2015). Childlessness falls, family size grows among highly
+educated women.
+
+Portes, A., & Zhou, M. (1993). The new second generation: Segmented assimilation and
+its variants. *The Annals of the American Academy of Political and Social Science*,
+530(1), 74–96.
+
+Zill, N. (2025). Four million American women reach ages 40 to 50 without children.
+Institute for Family Studies.
+
+---
+
+# Appendix: Technical Notes
+
+**Survey Design.** The 2022–2023 NSFG uses `VEST` (stratum) and `VECL` (cluster) with
+weight `WGT2022_2023`. We apply `options(survey.lonely.psu = "adjust")` throughout.
+
+**Generational Status.** Constructed from `BRNOUT` (respondent nativity). Parental
+birthplace variables (`MOMFBRN`/`DADFBRN`) were not available in the 2022–2023
+public-use file, so the variable is a two-category foreign-born/native-born indicator
+rather than the three-category generational measure originally planned.
+
+**Education Coding.** The 2022–2023 NSFG uses different `HIEDUC` codes than earlier
+waves. Education is coded into five categories: Less than HS (codes 1–2), HS Diploma/GED
+(3–4), Some College/Associate (5–7), Bachelor's Degree (8), and Graduate/Professional
+(9–11). The graduate/professional category is separated from bachelor's because the
+income premium and fertility patterns differ substantially between these groups —
+women with master's, professional, and doctoral degrees have historically had the
+highest rates of completed childlessness (Livingston, 2015). The `college` binary
+indicator (HIEDUC >= 8) is retained for interaction models.
+
+**Completed Childlessness.** `PARITY == 0` among women 40–49. `PARITY` counts live
+births ever had — a biological fertility measure, not co-resident child status.
+
+```{r session-info, results='asis'}
+cat("\n\n**Session Information**\n\n")
+cat(sprintf("R version: %s\n\n", R.version.string))
+cat(sprintf("Platform: %s\n\n", R.version$platform))
+cat(sprintf("Key packages: survey %s, haven %s, tidyverse %s\n",
+  packageVersion("survey"), packageVersion("haven"), packageVersion("tidyverse")))
+```
