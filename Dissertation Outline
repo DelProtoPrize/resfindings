@@ -1,0 +1,208 @@
+Dissertation Outline
+Title: The Nativity Gradient in American Fertility: Immigration, Assimilation, and the Unequal Distribution of Childlessness
+Dissertation Committee Target: Sociology, Demography, or Sociology of the Family — targeting a five-chapter structure suitable for a paper-based dissertation with three empirical chapters.
+
+FRONT MATTER
+
+Abstract (350 words)
+Acknowledgments
+Table of Contents
+List of Tables
+List of Figures
+
+
+CHAPTER 1: Introduction — The Puzzle of Unequal Childlessness
+Purpose: Establish the empirical puzzle, theoretical stakes, and the dissertation's contribution.
+1.1 The Rise of Childlessness as a Stratified Phenomenon
+Open with the empirical paradox: aggregate U.S. childlessness is rising, but the trend is profoundly unequal. Among women aged 40–49, childlessness rates range from 5.5% for those without a high school diploma to 27.4% for those with graduate degrees — and from 12% for foreign-born Hispanic women to 26% for native-born women in the Other racial category. This is not one story; it is many stories running simultaneously.
+1.2 The Immigration Blind Spot in Fertility Research
+Mainstream demographic accounts of childlessness focus on education, income, and marriage postponement. What they routinely miss: the compositional role of immigration. When roughly 39% of Hispanic women of reproductive age are foreign-born, any aggregate measure of "Hispanic fertility" is a weighted average of two very different populations. The failure to account for this has led to systematic misunderstanding of racial fertility differentials.
+1.3 The Argument in Brief
+This dissertation argues that the racial gradient in completed childlessness in the United States is substantially — though not entirely — an artifact of nativity composition, and that this compositional effect operates through two observable pathways: marriage and religious affiliation. It further argues that the financial dimensions of childlessness (studied in Chapters 2 and 3) and the nativity dimensions (studied in Chapter 4) are complementary, not competing, explanations — and that understanding childlessness requires both.
+1.4 Theoretical Contributions
+
+Bridging the fertility transition and immigrant incorporation literatures
+Testing classic assimilation theory against segmented assimilation (Portes & Zhou, 1993)
+Introducing the mediation framework for nativity-fertility relationships
+
+1.5 Dissertation Roadmap
+Preview of all chapters, data sources, methods, and how findings accumulate.
+
+CHAPTER 2: Literature Review and Theoretical Framework
+Purpose: Situate the dissertation within three literatures and derive testable hypotheses.
+2.1 Fertility Decline and the Rise of Childlessness in the United States
+
+TFR trends since 1990; distinction between tempo and quantum effects
+Voluntary vs. involuntary childlessness; the importance of fertility intentions
+The education-childlessness gradient: opportunity cost theory
+Marriage, partnership, and institutional contexts of childbearing
+Religion as a pronatalist institution: evidence and mechanisms
+
+2.2 Immigration, Nativity, and Fertility
+
+Classic assimilation theory: Alba & Nee (2003); Gordon (1964)
+The selectivity and disruption hypotheses for immigrant fertility
+Generational convergence: first-generation fertility advantage and second-generation attenuation
+Segmented assimilation (Portes & Zhou, 1993): why the linear model is insufficient
+Evidence for convergence: Parrado & Morgan (2008); Parrado (2011); Hill & Johnson (2004)
+The compositional mechanism: how aggregate racial fertility statistics mask nativity heterogeneity
+
+2.3 Race, Wealth, and Financial Barriers to Family Formation
+
+The racial wealth gap as a structural constraint on family formation
+Credit access, financial exclusion, and their relationship to parenthood timing
+Sharon Hays's "intensive parenting" and its financial demands
+Debt as a structural feature, not a personal failing: sociological framing
+
+2.4 Hypotheses
+
+H1 (Compositional): A substantial portion of the Hispanic-White childlessness gap is attributable to nativity composition, with first-generation Hispanic women having significantly lower childlessness than native-born Hispanic women.
+H2 (Null for Black): The Black-White childlessness gap is not explained by nativity, given the predominantly native-born composition of the Black population.
+H3 (Mediation): The foreign-born fertility advantage is mediated by marriage and religious affiliation rather than operating through an unmeasured cultural residual.
+H4 (Financial): Childlessness is associated with the composition of the household balance sheet — particularly retirement assets and credit constraints — not aggregate income or wealth.
+H5 (Parenthood and Debt): The transition to parenthood is the strongest demographic predictor of credit card indebtedness, consistent with the liquidity strain theory of parental debt.
+
+
+CHAPTER 3: The Cost of Becoming a Parent — Credit Card Debt and the Transition to Parenthood
+Purpose: Paper 1. Establish the financial consequences of parenthood and frame credit card debt as a structural feature of modern family formation.
+3.1 Introduction: Why Debt?
+Credit card debt as a measure of liquidity strain; the two-part behavioral phenomenon (who enters debt vs. how much they carry)
+3.2 Data and Methods
+
+2022 Survey of Consumer Finances (SCF)
+Two-part model: logistic regression for prevalence + OLS on log-balance for debtors
+Lasso variable selection across five implicates (majority rule)
+Survey weighting and multiple imputation via Rubin's Rules
+
+3.3 Results
+3.3.1 Descriptive Landscape
+Distribution of credit card debt; the demographic fault lines (parenthood, credit denial, liquid savings)
+3.3.2 Model Results: Who Enters Debt?
+
+The parenthood tipping point: OR = 1.54, the first child
+The suppression effect: additional children reduce odds (intensive margin vs. extensive margin)
+Credit denial as a vulnerability marker: OR = 1.97
+Marriage: the null finding and its implications
+
+3.3.3 Model Results: How Much Do Debtors Owe?
+
+Wages as the repayment mechanism: the negative wage-balance relationship
+Liquid savings as a protective threshold
+The asymmetry between Part 1 and Part 2 predictors
+
+3.3.4 Interaction Effects
+Does the parenthood debt penalty differ by education, marriage, or race?
+3.4 Discussion
+
+Intensive parenting norms and the material cost of the first child
+Race and the structural inequality of debt
+Policy implications: wage support vs. credit access expansion
+
+
+CHAPTER 4: The Balance Sheet of Childlessness — Financial Structure and Family Formation
+Purpose: Paper 2. Show that it is the composition of the household balance sheet, not aggregate income, that distinguishes childless from parent households.
+4.1 Introduction: Beyond Income
+The conventional economic account of childlessness focuses on income and opportunity costs. This chapter argues for a more granular view: what a household owns (retirement assets), what it owes (credit card debt), and whether it can access credit independently shape childlessness.
+4.2 Data and Methods
+
+2022 Survey of Consumer Finances (SCF)
+Outcome: co-resident childlessness (ages 31–44); measurement limitations addressed
+Logistic regression with Lasso-selected financial predictors
+Survey weighting, multiple imputation
+
+4.3 Results
+4.3.1 The Retirement Asset Finding
+OR = 1.05 per unit of retirement assets: the opportunity cost hypothesis confirmed
+4.3.2 Credit Denial as a Barrier
+OR = 2.01: credit-constrained households are more likely to be childless; parallel to Chapter 3's credit denial finding
+4.3.3 The Income Null
+Aggregate income and net worth are non-significant; only earned wages matter
+4.3.4 The Race Mediation
+Racial differences in co-resident childlessness are fully absorbed by financial and demographic controls, motivating the Chapter 5 test of the nativity hypothesis
+4.4 Discussion
+
+Two mechanisms by which financial structure shapes childlessness: opportunity cost (retirement assets) and material constraint (credit denial)
+The bridge to Chapter 5: if race is fully mediated by financial/demographic controls, is nativity the underlying driver?
+
+
+CHAPTER 5: Born Here or There — Nativity, Immigration, and Completed Childlessness
+Purpose: Paper 3 (the NSFG analysis). Direct test of the nativity hypothesis using biological fertility, nativity data, and a sequential regression design.
+5.1 Introduction: The Nativity Hypothesis
+What the SCF analyses could not test; why the NSFG enables the test; the theoretical stakes
+5.2 Data and Methods
+
+2022–2023 NSFG female respondent file
+Sample: women aged 40–49 (completed fertility); N = 1,490
+Outcome: PARITY == 0 (children ever born); biological fertility, not co-resident status
+Sequential logistic regression: Models 1–3
+Post-treatment bias analysis
+Five-level education coding (HIEDUC corrected for 2022–2023 wave)
+
+5.3 Results
+5.3.1 Descriptive: The Nativity Gap Within Race
+Native-born Hispanic (22.6%) vs. foreign-born Hispanic (12.0%); native-born Other (25.8%) vs. foreign-born Other (11.8%); the convergence of native-born Hispanic and White women
+5.3.2 Sequential Models: Testing the Compositional Hypothesis
+
+Model 1 → Model 2: 59% attenuation of Hispanic-White gap
+Model 2 → Model 3: nativity loses significance (mediated by marriage and religion)
+Black-White gap: 1.7% attenuation — nativity irrelevant
+
+5.3.3 Post-Treatment Bias Analysis
+Total effect (M2: OR = 0.556) vs. direct effect (M3: OR = 0.710); indirect effect mediated through marriage and religion
+5.3.4 Predicted Probabilities
+Range: 5.3% (foreign-born Hispanic, married, no college) to 33.0% (native-born White, unmarried, college)
+5.3.5 The AAPI Null: A Puzzle
+Native-born (25.8%) vs. foreign-born (11.8%) gap masked by within-group heterogeneity; East Asian vs. South/Southeast Asian fertility patterns
+5.3.6 Fertility Intentions
+OR = 1.89: wanting children predicts childlessness among 40–49-year-olds; involuntary childlessness as a distinct phenomenon
+5.4 Discussion
+
+H1–H3 evaluation
+Segmented assimilation limitations: what the two-category measure cannot test
+Religion as a fertility-promoting institution: the Protestant and Catholic effects
+Poverty and financial instability as accumulated barriers
+The AAPI heterogeneity problem as a research agenda
+
+
+CHAPTER 6: Conclusion — Financial Structure, Immigration, and the Unequal Distribution of Childlessness
+Purpose: Synthesize all three empirical chapters, state theoretical contributions, policy implications, and future research agenda.
+6.1 The Three-Paper Synthesis
+What each paper contributes and how they accumulate:
+
+Paper 1: Parenthood drives debt; the first child is the tipping point
+Paper 2: Balance sheet composition, not income, predicts childlessness; racial differences mediated by financial/demographic controls
+Paper 3: Nativity composition explains 59% of the Hispanic-White childlessness gap; the nativity effect is mediated through marriage and religion
+
+6.2 The Overarching Argument
+The dissertation demonstrates that childlessness in America is shaped by two intersecting structural forces that most research treats separately: the financial structure of households (what they own, owe, and can borrow) and the nativity composition of racial populations (the fertility norms immigrants bring, and how quickly these converge across generations). No single dataset captures both — the SCF has financial depth without nativity, the NSFG has nativity without financial granularity. The methodological contribution is demonstrating what a multi-dataset approach reveals that no single source can.
+6.3 Theoretical Contributions
+
+Extension of assimilation theory to fertility outcomes, with explicit test of the mediation pathway through marriage and religion
+Financial barriers to family formation as a structural account connecting debt, credit access, and childlessness
+The measurement critique: aggregate racial fertility statistics are compositional artifacts
+
+6.4 Policy Implications
+
+For fertility policy: income support alone cannot reverse childlessness driven by educational investment, marriage delay, and secular change; nativity-based buffering of aggregate fertility is temporary and generationally bounded
+For financial policy: credit access expansion increases debt prevalence without reducing severity; wage growth and emergency savings are the effective levers
+For family support policy: the parenthood debt penalty concentrates at the first child — financial preparation programs should target the transition to parenthood
+
+6.5 Limitations and Future Research
+
+Three-category generational status (requires parental birthplace data or earlier NSFG waves)
+Country-of-origin subgroup analysis for Hispanic and AAPI populations (requires pooled multi-wave data)
+Longitudinal tracking of debt accumulation around the parenthood transition
+Male fertility and paternal financial strain
+The AAPI heterogeneity research agenda
+
+
+REFERENCES
+Full bibliography in ASA or APA format
+
+APPENDICES
+
+Appendix A: SCF Technical Notes (multiple imputation, survey weights, Lasso implementation, tautology correction)
+Appendix B: NSFG Technical Notes (survey design, HIEDUC coding by wave, PARITY vs. co-resident children distinction)
+Appendix C: Supplementary Tables (full model results with all controls; interaction models; sensitivity analyses)
+Appendix D: Robustness Checks (alternative age windows; pooled NSFG waves simulation; 4/5 majority rule vs. 3/5 for Lasso)
+Appendix E: R Session Information and Reproducibility Notes
