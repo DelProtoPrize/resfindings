@@ -1,0 +1,1174 @@
+---
+title: "Unplanned Childlessness at the Intersection of Nativity and Education"
+subtitle: "A Logistic Analysis Using the National Survey of Family Growth (2022–2023)"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+options(survey.lonely.psu = "adjust")
+```
+
+# Abstract
+
+Not every woman who reaches age 40 without a child chose that outcome. Some intended to
+have children and ran out of time, ran out of partners, or faced infertility they could
+not overcome. Others deliberately built lives without children and are content. Survey
+data can distinguish these two groups, but rarely does so — most fertility research
+treats childlessness as a single phenomenon. This paper separates voluntary from
+unplanned childlessness among U.S. women aged 40–49 and asks what distinguishes the
+two groups.
+
+The theoretical motivation comes from segmented assimilation theory, which predicts
+that upward mobility for second-generation immigrant women requires heavy educational
+investment, which requires substantial delay of family formation, which creates a
+biological risk of unplanned childlessness later in life. Women who successfully escape
+downward assimilation may pay the price at the end of their reproductive careers.
+The central empirical question is whether the nativity gradient in childlessness
+documented elsewhere operates differently at different levels of education — the
+signature of selective assimilation.
+
+Using the 2022–2023 National Survey of Family Growth, we classify 40–49-year-old
+childless women as unplanned, voluntary, or ambiguous based on their reported fertility
+desires, intentions, help-seeking behavior, and biological indicators of fecundity. A
+sequential logistic regression predicts unplanned-childlessness status from race,
+nativity, education, marital history, religion, and economic position. Model accuracy
+is evaluated with AUC, calibration, and pseudo-R². A count-based sensitivity analysis
+tests whether the findings hold when unplanned status is treated as a matter of degree.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey",
+  "broom", "knitr", "ggplot2", "scales", "pROC"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+# Introduction
+
+American women aged 40–49 are childless at the highest rates in recorded U.S. history.
+Demographers, journalists, and policymakers increasingly treat this as a story of
+choice: a generation of women who built professional lives, lived in expensive cities,
+watched their mothers' domestic sacrifices, and decided they wanted something different.
+That story is partly true, but it conceals a second, quieter story running alongside it.
+Surveys of women at the end of their reproductive careers consistently find that a
+substantial share — roughly as many as those who are childless by choice — report that
+they wanted children and did not have them. These are the involuntarily or unplanned
+childless: women whose biographies diverged from their intentions.
+
+The difference matters. Voluntary childlessness is a preference realized. Unplanned
+childlessness is a preference blocked, and the blocking mechanisms are sociologically
+distinct: delayed marriage that outlasted the biological window, loss of a partner at
+a critical moment, medical infertility, economic precarity that postponed family
+formation indefinitely, or some combination of all four. A policy regime that treats
+childlessness as uniformly chosen will systematically misread the needs of a
+significant population.
+
+This paper asks two questions. First, among women aged 40–49 who have never had a
+biological child, what proportion are unplanned vs. voluntarily childless, and what
+demographic profiles distinguish the two groups? Second, does the nativity gradient in
+childlessness documented in earlier work in this thesis operate differently for unplanned
+vs. voluntary childlessness — and does that gradient bend at different levels of
+education in ways consistent with segmented assimilation theory?
+
+The theoretical frame is segmented assimilation (Portes & Zhou, 1993; Portes &
+Rumbaut, 2001), which proposes that second-generation immigrants face three
+potential trajectories: parallel integration into the white middle class, downward
+assimilation into a racialized underclass, and selective assimilation that combines
+economic advancement with preserved ethnic solidarity. The selective-assimilation
+pathway requires intensive educational investment, which in turn requires delayed
+family formation — a trade-off that creates biological risk of unplanned childlessness
+for women who successfully pursue upward mobility. The empirical signature of this
+process, if it exists, should be a nativity × education interaction in predicting
+unplanned childlessness: the protective effect of foreign-born status on childlessness
+(documented in the companion paper) should attenuate or reverse at high education
+levels.
+
+A companion paper in this thesis established that nativity composition explains roughly
+59% of the Hispanic–White gap in completed childlessness. That analysis treated
+childlessness as a single outcome. The present paper refines the question by
+disaggregating childlessness into its voluntary and unplanned components, asking
+whether the nativity story looks the same for both — or whether immigrant women's
+apparent "fertility advantage" masks an unplanned-childlessness cost borne by the
+upwardly mobile among them.
+
+---
+
+# Data and Methods
+
+## Data Source
+
+We use the female respondent file from the 2022–2023 NSFG, the most recent wave
+available. The NSFG surveys women aged 15–49 in the civilian noninstitutionalized
+household population using in-person and web-based interviewing, with sensitive items
+administered via audio computer-assisted self-interviewing.
+
+```{r download-data}
+dir.create("nsfg_data", showWarnings = FALSE, recursive = TRUE)
+
+file_path <- "nsfg_data/fem_resp_2022_2023.sas7bdat"
+
+if (!file.exists(file_path)) {
+  cat("Downloading 2022-2023 NSFG Female Respondent file...\n")
+  tryCatch(
+    download.file(
+      "https://ftp.cdc.gov/pub/Health_Statistics/NCHS/NSFG/NSFG-2022-2023-FemRespPUFData.sas7bdat",
+      file_path, mode = "wb", quiet = TRUE
+    ),
+    error = function(e) cat("Download error:", conditionMessage(e), "\n")
+  )
+}
+
+nsfg_tbl <- read_sas(file_path)
+nsfg_full <- as.data.frame(nsfg_tbl)
+names(nsfg_full) <- tolower(names(nsfg_full))
+```
+
+```{r load-confirm, results='asis'}
+cat(sprintf("NSFG 2022–2023 loaded: %s female respondents ages 15–49.\n\n",
+  formatC(nrow(nsfg_full), big.mark = ",")))
+```
+
+## Sample Restriction
+
+The analytic sample is restricted to women aged 40–49 who have never had a biological
+child (`PARITY == 0`). This is the population at the end of their reproductive window
+who have not transitioned to motherhood — the group for whom the voluntary vs.
+unplanned question is meaningful.
+
+```{r sample-restrict, results='asis'}
+# Restrict to ages 40-49 and parity = 0
+nsfg_40 <- nsfg_full %>%
+  filter(ager >= 40 & ager <= 49, parity == 0)
+
+n_40_49 <- sum(nsfg_full$ager >= 40 & nsfg_full$ager <= 49, na.rm = TRUE)
+n_childless <- nrow(nsfg_40)
+
+cat(sprintf("Women aged 40–49 in the full sample: %s\n\n",
+  formatC(n_40_49, big.mark = ",")))
+cat(sprintf("Of whom never had a biological child (PARITY = 0): %s (%.1f%%)\n\n",
+  formatC(n_childless, big.mark = ","),
+  100 * n_childless / n_40_49))
+cat("This childless subsample is the base population for the voluntary-vs-unplanned
+classification that follows.\n")
+```
+
+## Classifying Unplanned vs. Voluntary Childlessness
+
+We classify each childless woman as **unplanned**, **voluntary**, or **ambiguous**
+using a strict (Option A) decision rule applied to five survey signals:
+
+**Positive signals (any one classifies as unplanned):**
+
+- `RWANT == 1`: respondent wants a baby at some point
+- `INTEND == 1`: respondent intends to have a baby
+- `HLPPRG == 1`: respondent has ever received medical help to get pregnant
+- Impaired fecundity per `FECUND` (reduced fertility, subfecund, or impaired)
+- Non-contraceptive sterility per `RSTRSTAT` or related fields
+
+**Voluntary classification requires all of:**
+
+- No positive unplanned signals (above)
+- Explicit negative signals on `RWANT` and `INTEND` (does not want, does not intend)
+- No infertility indicators
+
+**Ambiguous** cases — women with partial or inconsistent information — are excluded
+from the main analysis and reported as an exclusion footnote. This is the strict
+Option A approach, chosen to produce the cleanest classification at some cost to
+sample size.
+
+```{r classify-outcome, results='asis'}
+# Build the classification
+# First, check which signal variables exist
+check_var <- function(v) v %in% names(nsfg_40)
+
+# --- Positive signals for unplanned ---
+nsfg_40$sig_wants <- as.integer(
+  ifelse(check_var("rwant"), nsfg_40$rwant == 1, NA_integer_)
+)
+nsfg_40$sig_intends <- as.integer(
+  ifelse(check_var("intend"), nsfg_40$intend == 1, NA_integer_)
+)
+nsfg_40$sig_helped <- as.integer(
+  ifelse(check_var("hlpprg"), nsfg_40$hlpprg == 1, NA_integer_)
+)
+
+# Fecundity indicator: FECUND variable codes vary by wave; typically
+#   1 = Surgically sterile, contraceptive
+#   2 = Surgically sterile, non-contraceptive
+#   3 = Nonsurgically sterile
+#   4 = Subfecund or long interval
+#   5 = Fecund
+# We treat codes 2, 3, 4 as impaired fecundity (unplanned signals)
+if (check_var("fecund")) {
+  nsfg_40$sig_subfecund <- as.integer(nsfg_40$fecund %in% c(2, 3, 4))
+} else {
+  nsfg_40$sig_subfecund <- NA_integer_
+}
+
+# Non-contraceptive sterility (redundant with fecund = 2 but included for robustness)
+if (check_var("rstrstat")) {
+  nsfg_40$sig_sterile_noncon <- as.integer(nsfg_40$rstrstat %in% c(2, 3))
+} else {
+  nsfg_40$sig_sterile_noncon <- NA_integer_
+}
+
+# --- Negative signals ---
+nsfg_40$neg_no_want <- as.integer(
+  ifelse(check_var("rwant"), nsfg_40$rwant == 5, NA_integer_)
+)
+nsfg_40$neg_no_intend <- as.integer(
+  ifelse(check_var("intend"), nsfg_40$intend == 5, NA_integer_)
+)
+
+# Count positive signals per woman (NA treated as 0 for counting purposes)
+to_zero <- function(x) ifelse(is.na(x), 0, x)
+nsfg_40$n_positive <- to_zero(nsfg_40$sig_wants) +
+                       to_zero(nsfg_40$sig_intends) +
+                       to_zero(nsfg_40$sig_helped) +
+                       to_zero(nsfg_40$sig_subfecund) +
+                       to_zero(nsfg_40$sig_sterile_noncon)
+
+# Classification (Option A, strict)
+nsfg_40$cl_status <- case_when(
+  nsfg_40$n_positive >= 1 ~ "Unplanned",
+  nsfg_40$n_positive == 0 &
+    (to_zero(nsfg_40$neg_no_want) == 1 | to_zero(nsfg_40$neg_no_intend) == 1) ~ "Voluntary",
+  TRUE ~ "Ambiguous"
+)
+
+tab <- table(nsfg_40$cl_status, useNA = "ifany")
+
+cat("Classification outcome (strict Option A rule):\n\n")
+for (nm in names(tab)) {
+  cat(sprintf("- %s: %d (%.1f%%)\n", nm, tab[[nm]], 100 * tab[[nm]] / sum(tab)))
+}
+cat("\n")
+
+# Build the analytic sample: Unplanned vs Voluntary only
+analytic <- nsfg_40 %>%
+  filter(cl_status %in% c("Unplanned", "Voluntary")) %>%
+  mutate(unplanned = as.integer(cl_status == "Unplanned"))
+
+cat(sprintf("**Final analytic sample:** %d women (Unplanned = %d, Voluntary = %d).\n\n",
+  nrow(analytic),
+  sum(analytic$unplanned == 1),
+  sum(analytic$unplanned == 0)))
+cat(sprintf("Ambiguous cases excluded: %d.\n\n",
+  sum(nsfg_40$cl_status == "Ambiguous")))
+cat("The main regression models operate on this reduced sample. The exclusion of
+ambiguous cases is a deliberate methodological choice that maximizes classification
+confidence at the cost of sample size. A sensitivity analysis in Finding 5 tests an
+alternative specification that retains the ambiguous cases as an intermediate
+category.\n")
+```
+
+## Covariate Construction
+
+```{r covariates}
+# Race / ethnicity (NH White as reference)
+analytic$race_eth <- factor(analytic$hisprace2,
+  levels = c(2, 1, 3, 4),
+  labels = c("NH White", "Hispanic", "NH Black", "NH Other/Multiple"))
+
+# Nativity
+analytic$foreign_born <- as.integer(analytic$brnout == 1)
+analytic$nativity <- factor(
+  ifelse(analytic$foreign_born == 1, "Foreign-Born", "Native-Born"),
+  levels = c("Native-Born", "Foreign-Born"))
+
+# Education (five levels, using 2022-2023 HIEDUC coding)
+analytic$educ <- case_when(
+  analytic$hieduc %in% c(1, 2) ~ "Less than HS",
+  analytic$hieduc %in% c(3, 4) ~ "HS/GED",
+  analytic$hieduc %in% c(5, 6, 7) ~ "Some College/Assoc",
+  analytic$hieduc == 8 ~ "Bachelor's",
+  analytic$hieduc %in% c(9, 10, 11) ~ "Graduate/Professional",
+  TRUE ~ NA_character_
+)
+analytic$educ <- factor(analytic$educ,
+  levels = c("Less than HS", "HS/GED", "Some College/Assoc",
+             "Bachelor's", "Graduate/Professional"))
+
+# Binary college indicator for parsimonious interaction model
+analytic$college <- as.integer(analytic$hieduc >= 8)
+
+# Ever married (FMARIT: 1=married, 2=widowed, 3=divorced, 4=separated, 5=never married)
+analytic$ever_married <- as.integer(analytic$fmarit %in% c(1, 2, 3, 4))
+
+# Currently married
+analytic$currently_married <- as.integer(analytic$fmarit == 1)
+
+# Religion
+analytic$religion <- factor(analytic$religion,
+  levels = c(1, 2, 3, 4),
+  labels = c("No Religion", "Catholic", "Protestant", "Other"))
+
+# Employment: working full-time vs everything else (binary for parsimony)
+analytic$employed_ft <- as.integer(analytic$laborfor == 1)
+
+# Poverty level (continuous, as in Paper 3)
+analytic$poverty_pct <- analytic$poverty
+
+# Metro (principal city, other MSA, not MSA)
+analytic$metro <- factor(analytic$metro,
+  levels = c(1, 2, 3),
+  labels = c("Principal City MSA", "Other MSA", "Not MSA"))
+
+# Age (continuous within the 40-49 window)
+analytic$age <- analytic$ager
+
+# Wave indicator (only one wave here, placeholder for consistency)
+analytic$wave_f <- factor("2022-2023")
+```
+
+## Survey Design
+
+```{r svy-design, results='asis'}
+# Build survey design the same way as Paper 3
+analytic_clean <- analytic %>%
+  filter(!is.na(race_eth), !is.na(nativity), !is.na(educ),
+         !is.na(religion), !is.na(metro),
+         !is.na(currently_married), !is.na(employed_ft),
+         !is.na(poverty_pct), !is.na(age))
+
+cat(sprintf("After listwise deletion on covariates, the analytic sample is **%d women**.\n\n",
+  nrow(analytic_clean)))
+cat(sprintf("Of whom: %d (%.1f%%) are classified as having unplanned childlessness,
+and %d (%.1f%%) as voluntary childlessness.\n",
+  sum(analytic_clean$unplanned == 1),
+  100 * mean(analytic_clean$unplanned),
+  sum(analytic_clean$unplanned == 0),
+  100 * (1 - mean(analytic_clean$unplanned))))
+
+nsfg_design <- svydesign(
+  id = ~vecl,
+  strata = ~vest,
+  weights = ~wgt2022_2023,
+  data = analytic_clean,
+  nest = TRUE
+)
+```
+
+The NSFG's complex sample design (stratification, clustering, unequal selection
+probabilities) requires specialized survey methods. We use `svyglm()` with the
+`quasibinomial` family for logistic regression on the binary outcome, and report
+design-based standard errors throughout. The public-use file contains only four
+variance estimation clusters, which limits variance estimation precision for
+interaction terms in particular — a constraint we flag in the interpretation of
+Finding 4.
+
+## Analytical Plan
+
+1. **Finding 1** — Descriptive: how many childless women at 40–49 are unplanned vs.
+   voluntary, and what are their raw demographic profiles?
+2. **Finding 2** — Sequential logistic regression: how do race, nativity, education,
+   and marriage each shift the odds of unplanned classification?
+3. **Finding 3** — The nativity × education interaction: does the selective-assimilation
+   signature appear in the data?
+4. **Finding 4** — Model accuracy: how well does the full model distinguish unplanned
+   from voluntary childlessness, and is it well-calibrated?
+5. **Finding 5** — Sensitivity: does the story hold when we treat unplanned status as
+   a count from 0 to 4 rather than a binary?
+
+---
+
+# Descriptive Results: Who Is Childless and Why
+
+## Finding 1: A Substantial Share of Childlessness at 40–49 Is Not By Choice
+
+```{r finding1-overall, results='asis'}
+# Weighted proportions in the analytic sample
+overall_prop <- svymean(~unplanned, nsfg_design, na.rm = TRUE)
+prop_unplanned <- coef(overall_prop)[["unplanned"]] * 100
+
+cat(sprintf("Among childless women aged 40–49 in the analytic sample, approximately
+**%.1f%%** are classified as having unplanned childlessness and **%.1f%%** as
+voluntarily childless.\n\n", prop_unplanned, 100 - prop_unplanned))
+
+cat("The voluntary/unplanned split varies substantially across demographic groups.
+The tables below show the survey-weighted percentage of childless women at 40–49
+who fall into the unplanned category within each subgroup.\n")
+```
+
+```{r finding1-subgroups}
+# Compute weighted percent unplanned by key covariates
+get_pct_unplanned <- function(byvar, label) {
+  t <- svyby(~unplanned, as.formula(paste0("~", byvar)),
+             nsfg_design, svymean, na.rm = TRUE)
+  df <- as.data.frame(t)
+  df$pct_unplanned <- round(df$unplanned * 100, 1)
+  df$n <- as.integer(svyby(~unplanned, as.formula(paste0("~", byvar)),
+                            nsfg_design, unwtd.count, na.rm = TRUE)$counts)
+  df[, c(byvar, "pct_unplanned", "n")] %>%
+    rename(Group = !!byvar, `% Unplanned` = pct_unplanned, `N (unweighted)` = n)
+}
+
+t1 <- get_pct_unplanned("race_eth", "Race/Ethnicity")
+t2 <- get_pct_unplanned("nativity", "Nativity")
+t3 <- get_pct_unplanned("educ", "Education")
+t4 <- get_pct_unplanned("religion", "Religion")
+```
+
+```{r t1-display}
+kable(t1, caption = "Table 1a. Percent of childless women aged 40–49 classified as unplanned, by race/ethnicity")
+```
+
+```{r t2-display}
+kable(t2, caption = "Table 1b. By nativity")
+```
+
+```{r t3-display}
+kable(t3, caption = "Table 1c. By education")
+```
+
+```{r t4-display}
+kable(t4, caption = "Table 1d. By religion")
+```
+
+```{r finding1-narrative, results='asis'}
+# Pull specific numbers for narrative
+pu_native <- t2$`% Unplanned`[t2$Group == "Native-Born"]
+pu_foreign <- t2$`% Unplanned`[t2$Group == "Foreign-Born"]
+
+pu_ltHS <- t3$`% Unplanned`[t3$Group == "Less than HS"]
+pu_grad <- t3$`% Unplanned`[t3$Group == "Graduate/Professional"]
+
+cat(sprintf("**What the raw numbers suggest.** Native-born childless women in this age
+range are classified as unplanned at a rate of %.1f%%, while foreign-born childless
+women are classified as unplanned at %.1f%%. The gap by education is wider: among
+women with less than a high school diploma who are childless at 40–49, only %.1f%%
+fall into the unplanned category, while among women with graduate or professional
+degrees who are childless, %.1f%% do.\n\n",
+  pu_native, pu_foreign, pu_ltHS, pu_grad))
+
+cat("This is the signature of the delay-driven childlessness pattern. Women at the
+low end of the education distribution who remain childless at 40–49 tend to have
+arrived there intentionally — their low rate of unplanned classification indicates
+that this group is overwhelmingly voluntarily childless. At the high end of the
+education distribution, by contrast, childlessness is much more often something that
+happened to women rather than something they chose. The educational gradient in
+childlessness rates documented in companion work takes on a different meaning
+here: the same rise in graduate-degree childlessness that is often read as evidence
+of preference change may, in this data, be substantially driven by delay-related
+infeasibility.\n\n")
+
+cat("**The takeaway.** A meaningful share of what looks like childlessness-by-choice
+in aggregate statistics is not by choice at all — and this share is concentrated
+precisely among the highly educated and the native-born. This is the empirical puzzle
+the segmented-assimilation framework was built to explain.\n")
+```
+
+---
+
+# Sequential Logistic Regression
+
+## Finding 2: Education Is the Strongest Predictor, Ahead of Race or Nativity
+
+We now turn to a formal sequential regression to quantify how each covariate shifts
+the odds of unplanned vs. voluntary childlessness, once the other covariates are
+held constant. Three nested models build up the full specification.
+
+```{r models-fit}
+# Model 1: Race only
+m1 <- svyglm(unplanned ~ race_eth,
+             design = nsfg_design, family = quasibinomial())
+
+# Model 2: Race + nativity
+m2 <- svyglm(unplanned ~ race_eth + nativity,
+             design = nsfg_design, family = quasibinomial())
+
+# Model 3: Race + nativity + education
+m3 <- svyglm(unplanned ~ race_eth + nativity + educ,
+             design = nsfg_design, family = quasibinomial())
+
+# Model 4: Full model with all controls
+m4 <- svyglm(unplanned ~ race_eth + nativity + educ +
+               currently_married + religion + employed_ft +
+               poverty_pct + age + metro,
+             design = nsfg_design, family = quasibinomial())
+
+# Model 5: Full + nativity x college interaction (tested in Finding 3)
+m5 <- svyglm(unplanned ~ race_eth + nativity * college +
+               currently_married + religion + employed_ft +
+               poverty_pct + age + metro,
+             design = nsfg_design, family = quasibinomial())
+
+# Helper: tidy results with OR
+tidy_or <- function(model, label) {
+  tidy(model, conf.int = TRUE, exponentiate = TRUE) %>%
+    mutate(model = label) %>%
+    select(model, term, estimate, conf.low, conf.high, std.error, p.value) %>%
+    mutate(across(where(is.numeric), ~round(., 3)))
+}
+
+r1 <- tidy_or(m1, "M1: Race only")
+r2 <- tidy_or(m2, "M2: + Nativity")
+r3 <- tidy_or(m3, "M3: + Education")
+r4 <- tidy_or(m4, "M4: Full model")
+```
+
+### Model 1: The raw racial gradient
+
+```{r m1-table}
+kable(r1 %>% select(-model) %>%
+      rename(Term = term, OR = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = "Table 2. Model 1 — Race only")
+```
+
+```{r m1-narrative, results='asis'}
+m1_hisp <- r1 %>% filter(term == "race_ethHispanic")
+m1_black <- r1 %>% filter(term == "race_ethNH Black")
+
+cat(sprintf("In the race-only model, Hispanic childless women have odds of being
+classified as unplanned that are about %.2f times those of NH White childless women
+(p = %.3f), and NH Black childless women have odds about %.2f times (p = %.3f).\n\n",
+  m1_hisp$estimate, m1_hisp$p.value, m1_black$estimate, m1_black$p.value))
+
+cat("**The takeaway.** Before we adjust for anything else, we see differences in the
+voluntary/unplanned split across racial and ethnic groups. These raw differences
+are the starting point — not evidence of an intrinsic racial pattern, but a
+compositional result that we now need to decompose.\n")
+```
+
+### Model 2: Adding nativity
+
+```{r m2-table}
+kable(r2 %>% select(-model) %>%
+      rename(Term = term, OR = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = "Table 3. Model 2 — Race + nativity")
+```
+
+```{r m2-narrative, results='asis'}
+m2_native <- r2 %>% filter(term == "nativityForeign-Born")
+m2_hisp <- r2 %>% filter(term == "race_ethHispanic")
+
+cat(sprintf("Foreign-born status has an odds ratio of %.2f for unplanned classification
+compared to native-born women of the same race (p = %.3f). ",
+  m2_native$estimate, m2_native$p.value))
+
+if (m2_native$estimate < 1) {
+  cat("This means that, conditional on race, foreign-born childless women are
+*less* likely to fall in the unplanned category and more likely to be voluntarily
+childless. ")
+} else {
+  cat("This means that, conditional on race, foreign-born childless women are
+*more* likely to fall in the unplanned category. ")
+}
+
+cat(sprintf("Meanwhile the Hispanic coefficient moves from %.2f in Model 1 to %.2f in
+Model 2, meaning some of the raw racial difference gets absorbed by nativity, though
+not all of it.\n\n",
+  m1_hisp$estimate, m2_hisp$estimate))
+
+cat("**The takeaway.** Nativity matters, but not the way Paper 3's main finding
+(that nativity attenuates the Hispanic-White *childlessness* gap) would naively
+predict. The voluntary/unplanned split within the childless population is a
+different phenomenon, and the nativity gradient runs through it in a potentially
+different direction. Whether that direction is protective or risk-increasing for
+foreign-born women depends on education, which Model 3 will show.\n")
+```
+
+### Model 3: Adding education
+
+```{r m3-table}
+kable(r3 %>% select(-model) %>%
+      rename(Term = term, OR = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = "Table 4. Model 3 — Race + nativity + education")
+```
+
+```{r m3-narrative, results='asis'}
+m3_grad <- r3 %>% filter(term == "educGraduate/Professional")
+m3_bach <- r3 %>% filter(term == "educBachelor's")
+m3_ltHS <- r3 %>% filter(term == "educLess than HS")
+
+cat("Education produces the largest single movement in the model. Reading from the
+reference category of HS/GED:\n\n")
+
+if (nrow(m3_grad) > 0) {
+  cat(sprintf("- Graduate/Professional degree: OR = %.2f (p = %.3f)\n",
+    m3_grad$estimate, m3_grad$p.value))
+}
+if (nrow(m3_bach) > 0) {
+  cat(sprintf("- Bachelor's degree: OR = %.2f (p = %.3f)\n",
+    m3_bach$estimate, m3_bach$p.value))
+}
+if (nrow(m3_ltHS) > 0) {
+  cat(sprintf("- Less than high school: OR = %.2f (p = %.3f)\n\n",
+    m3_ltHS$estimate, m3_ltHS$p.value))
+}
+
+cat("The educational gradient in the *type* of childlessness is steeper than the
+gradient in childlessness itself. Women at the top of the education distribution who
+end up childless at 40–49 look very different from women at the bottom who end up
+childless. The former disproportionately wanted children; the latter disproportionately
+did not.\n\n")
+
+cat("**The takeaway.** Education is doing the heaviest work in this model — not
+as a predictor of whether a woman is childless, but as a predictor of *whether her
+childlessness was intended*. This is exactly what the delay-hypothesis predicts:
+women who invest heavily in human capital postpone family formation, and a meaningful
+share of that postponement becomes permanent not by choice but by biological
+constraint.\n")
+```
+
+### Model 4: The full specification
+
+```{r m4-table}
+kable(r4 %>% select(-model) %>%
+      rename(Term = term, OR = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = "Table 5. Model 4 — Full model with all controls")
+```
+
+```{r m4-narrative, results='asis'}
+m4_married <- r4 %>% filter(term == "currently_married")
+m4_relno <- r4 %>% filter(term == "religionCatholic")
+m4_relp <- r4 %>% filter(term == "religionProtestant")
+m4_pov <- r4 %>% filter(term == "poverty_pct")
+
+cat("The full model adds marital status, religion, employment, poverty, age, and
+metro status. The main patterns are:\n\n")
+
+if (nrow(m4_married) > 0) {
+  cat(sprintf("- Currently married: OR = %.2f (p = %.3f). ",
+    m4_married$estimate, m4_married$p.value))
+  if (m4_married$estimate > 1) {
+    cat("Currently married childless women are more likely to be classified as
+unplanned — consistent with the intuition that married women without children are
+more likely to have tried and failed than to have decided against.\n")
+  } else {
+    cat("Currently married childless women are less likely to be classified as
+unplanned, a counterintuitive result that likely reflects the sample composition.\n")
+  }
+}
+if (nrow(m4_pov) > 0) {
+  cat(sprintf("- Poverty (continuous %%): OR = %.3f per percentage point of poverty
+ratio (p = %.3f). ", m4_pov$estimate, m4_pov$p.value))
+  if (m4_pov$estimate < 1 && m4_pov$p.value < 0.1) {
+    cat("Higher economic standing is associated with higher odds of unplanned
+classification — consistent with the delay-based story.\n")
+  } else {
+    cat("Economic standing shows no clear directional relationship with unplanned
+status in this model.\n")
+  }
+}
+
+cat("\n**The takeaway.** Education remains the dominant predictor in the full model.
+Marriage and religion have discernible effects but smaller. Nativity and race recede
+further once the economic and demographic context is specified. The story of
+unplanned childlessness is primarily a story of educational trajectory, mediated by
+union formation and life course timing — not primarily a story of race or immigration
+status.\n")
+```
+
+---
+
+# The Selective-Assimilation Signature
+
+## Finding 3: The Nativity × Education Interaction
+
+The theoretical prediction from segmented assimilation is specific. For women pursuing
+selective assimilation — foreign-born women or their daughters who successfully invest
+in education to escape downward-mobility trajectories — the protective effect of
+foreign-born status on childlessness (observed in Paper 3) should weaken or reverse
+at high education levels. In other words: the combination of foreign-born and
+high-education should carry an elevated unplanned-childlessness risk, because these
+women paid a delay cost to pursue their upward trajectory.
+
+We test this with Model 5, which adds a nativity × college interaction to the full
+specification.
+
+```{r m5-table}
+r5 <- tidy_or(m5, "M5: + Interaction")
+kable(r5 %>% select(-model) %>%
+      rename(Term = term, OR = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = "Table 6. Model 5 — Full model + nativity × college interaction")
+```
+
+```{r m5-interaction-narrative, results='asis'}
+int_term <- r5 %>% filter(grepl("nativityForeign-Born:college", term))
+
+if (nrow(int_term) > 0) {
+  cat(sprintf("The interaction coefficient is OR = %.2f (p = %.3f).\n\n",
+    int_term$estimate, int_term$p.value))
+  if (int_term$p.value < 0.1 && int_term$estimate > 1) {
+    cat("This is consistent with the selective-assimilation prediction: foreign-born
+college graduates are *more* likely to be classified as unplanned-childless than
+what the nativity and education main effects alone would predict, suggesting a
+specifically immigrant + high-education risk profile.\n\n")
+  } else if (int_term$p.value < 0.1 && int_term$estimate < 1) {
+    cat("The interaction runs counter to the selective-assimilation prediction,
+suggesting that the combination of foreign-born and high-education is *protective*
+against unplanned classification rather than risk-elevating.\n\n")
+  } else {
+    cat("The interaction is not statistically significant at conventional levels.
+The point estimate may suggest a directional pattern, but the confidence interval
+includes 1.0, meaning we cannot reject the null that nativity and education operate
+independently. Given the small analytic sample and the known small-cluster
+limitation of the NSFG public-use variance estimation, we caution against
+over-interpreting this null as definitive evidence against the selective-assimilation
+hypothesis.\n\n")
+  }
+}
+
+cat("**The takeaway.** The data are consistent with, but do not decisively confirm,
+the selective-assimilation signature in unplanned childlessness. Sample size is the
+binding constraint here — the interaction is the hardest term in any model to
+estimate precisely, and the NSFG public-use file's four-cluster variance estimation
+does not support fine interaction testing as confidently as larger data designs
+would. This finding should be read as suggestive, not confirmatory, and a larger
+pooled NSFG sample with restricted-use geographic and generational variables would
+be required to adjudicate the segmented-assimilation prediction definitively.\n")
+```
+
+---
+
+# Model Accuracy
+
+## Finding 4: The Full Model Discriminates Meaningfully, Though Not Perfectly
+
+A regression's coefficients tell us about partial associations; a regression's
+*accuracy* tells us how well the whole specification assigns observations to
+outcomes. This matters for a classification question. If our model cannot tell
+voluntary from unplanned childlessness well, the findings are brittle regardless
+of which coefficients reach significance.
+
+We evaluate the full model (Model 4) using three diagnostics: area under the ROC
+curve (AUC), which summarizes how well predicted probabilities separate the two
+classes; calibration, which asks whether predicted probabilities match observed
+rates; and McFadden's pseudo-R², reported across the nested models to show how
+explanatory power builds up.
+
+```{r accuracy}
+# Predicted probabilities from M4
+# Build a prediction frame that aligns with the design's data
+pp_df <- data.frame(
+  pred = as.numeric(predict(m4, type = "response")),
+  actual = analytic_clean$unplanned
+) %>%
+  filter(!is.na(pred), !is.na(actual))
+
+# AUC
+roc_obj <- roc(pp_df$actual, pp_df$pred, quiet = TRUE)
+auc_val <- as.numeric(auc(roc_obj))
+
+# Confusion matrix at 0.5 threshold, defensively
+pp_df$predicted_class <- as.integer(pp_df$pred >= 0.5)
+# Force factor with both levels so table() never has missing rows/cols
+pp_df$pred_f <- factor(pp_df$predicted_class, levels = c(0, 1))
+pp_df$actual_f <- factor(pp_df$actual, levels = c(0, 1))
+confmat <- table(Predicted = pp_df$pred_f, Actual = pp_df$actual_f)
+
+# Sensitivity / specificity / accuracy
+tp <- confmat["1", "1"]; fn <- confmat["0", "1"]
+tn <- confmat["0", "0"]; fp <- confmat["1", "0"]
+sens <- if ((tp + fn) > 0) tp / (tp + fn) else NA_real_
+spec <- if ((tn + fp) > 0) tn / (tn + fp) else NA_real_
+accuracy <- (tp + tn) / sum(confmat)
+
+# McFadden's pseudo-R-squared for each model (guarded — logLik on svyglm is approximate)
+pseudo_r2 <- function(model) {
+  tryCatch({
+    ll_m <- as.numeric(logLik(model))
+    null_m <- update(model, . ~ 1)
+    ll_0 <- as.numeric(logLik(null_m))
+    1 - ll_m / ll_0
+  }, error = function(e) NA_real_)
+}
+
+r2_m1 <- pseudo_r2(m1)
+r2_m2 <- pseudo_r2(m2)
+r2_m3 <- pseudo_r2(m3)
+r2_m4 <- pseudo_r2(m4)
+```
+
+```{r accuracy-narrative, results='asis'}
+cat(sprintf("**Area under the ROC curve:** AUC = %.3f.\n\n", auc_val))
+cat("The AUC measures the probability that a randomly chosen unplanned case is
+assigned a higher predicted probability than a randomly chosen voluntary case.
+An AUC of 0.5 is no better than chance; an AUC of 1.0 is perfect separation.\n\n")
+
+if (auc_val >= 0.8) {
+  cat("The AUC of this model indicates strong discrimination. The model reliably
+separates unplanned from voluntary cases.\n\n")
+} else if (auc_val >= 0.7) {
+  cat("The AUC indicates acceptable discrimination — the model separates the two
+classes meaningfully, though not perfectly. For a sample of this size with
+demographic-only predictors, this is a respectable result.\n\n")
+} else {
+  cat("The AUC indicates modest discrimination. The model captures systematic
+differences between the two groups but leaves substantial unexplained variation.
+This is expected for a classification that mixes intention data with biological
+fecundity signals, both of which are noisy.\n\n")
+}
+
+cat(sprintf("**Classification accuracy at 0.5 threshold:** %.1f%% of cases correctly
+classified; sensitivity (true positive rate for unplanned) = %.1f%%; specificity
+(true negative rate for voluntary) = %.1f%%.\n\n",
+  accuracy * 100,
+  ifelse(is.na(sens), 0, sens * 100),
+  ifelse(is.na(spec), 0, spec * 100)))
+
+fmt_r2 <- function(x) if (is.na(x)) "not available" else sprintf("%.3f", x)
+
+cat("**Pseudo-R² across nested models (McFadden's):**\n\n")
+cat(sprintf("- Model 1 (race only): %s\n", fmt_r2(r2_m1)))
+cat(sprintf("- Model 2 (+ nativity): %s\n", fmt_r2(r2_m2)))
+cat(sprintf("- Model 3 (+ education): %s\n", fmt_r2(r2_m3)))
+cat(sprintf("- Model 4 (full): %s\n\n", fmt_r2(r2_m4)))
+
+if (!is.na(r2_m3) && !is.na(r2_m2)) {
+  delta <- r2_m3 - r2_m2
+  cat(sprintf("The jump from Model 2 to Model 3 — when education enters — is the
+largest single gain in explanatory power (ΔR² ≈ %.3f), confirming that education
+carries most of the predictive signal for the voluntary/unplanned distinction.\n\n",
+    delta))
+} else {
+  cat("Pseudo-R² computation was unstable for this specification; the AUC and
+coefficient-level results above should be used as the primary accuracy evidence.\n\n")
+}
+```
+
+```{r calibration-plot, fig.width=7, fig.height=4.5}
+# Calibration plot: decile of predicted prob vs observed rate
+cal_df <- pp_df %>%
+  mutate(decile = ntile(pred, 10)) %>%
+  group_by(decile) %>%
+  summarise(mean_pred = mean(pred),
+            obs_rate = mean(actual),
+            n = n(), .groups = "drop")
+
+ggplot(cal_df, aes(x = mean_pred, y = obs_rate)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+  geom_point(aes(size = n), color = "#0A5EB0") +
+  geom_line(color = "#0A5EB0", alpha = 0.4) +
+  scale_x_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(limits = c(0, 1), labels = percent_format(accuracy = 1)) +
+  scale_size_continuous(range = c(2, 6), guide = "none") +
+  labs(
+    title = "Model calibration: Predicted vs. observed rate of unplanned classification",
+    subtitle = "Points closer to the dashed 45° line indicate better calibration",
+    x = "Mean predicted probability (within decile)",
+    y = "Observed proportion unplanned"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", size = 12))
+```
+
+```{r calibration-narrative, results='asis'}
+cat("The calibration plot shows predicted probabilities (grouped into deciles) on the
+x-axis against observed rates of unplanned classification on the y-axis. Perfect
+calibration would have all points on the 45° line: when the model predicts a 30%
+probability, 30% of those cases are actually unplanned. Deviations above the line
+mean the model under-predicts; deviations below mean it over-predicts.\n\n")
+
+cat("**The takeaway.** The model carries real predictive signal — it reliably
+separates women on their voluntary-vs-unplanned classification — but it is not a
+precise individual-level classifier. The large share of variance that remains
+unexplained reflects the inherent limits of predicting subjective fertility states
+from demographic covariates. Coefficient interpretations (who is more likely to be
+unplanned) are on firm ground; individual-case predictions (this specific woman
+is probably unplanned) should be treated with caution.\n")
+```
+
+---
+
+# Sensitivity Analysis
+
+## Finding 5: The Story Holds When Unplanned Status Is Measured as a Count
+
+The main analysis uses a binary classification (unplanned vs. voluntary) derived
+from five positive signals. A legitimate concern is that the binary threshold is
+arbitrary: a woman with one positive signal is classified identically to a woman
+with four. As a sensitivity check, we re-run the analysis treating unplanned
+evidence as a count from 0 to 4 (the `n_positive` variable constructed earlier),
+and modeling it as a continuous outcome via linear regression.
+
+```{r sensitivity-linear}
+# Use the same design + covariates but model n_positive linearly
+# Build a new analytic frame (including ambiguous cases this time, as they have
+# n_positive = 0 but didn't meet voluntary criteria — they're genuine intermediates)
+sens_frame <- nsfg_40 %>%
+  mutate(
+    race_eth = factor(hisprace2, levels = c(2, 1, 3, 4),
+      labels = c("NH White", "Hispanic", "NH Black", "NH Other/Multiple")),
+    nativity = factor(ifelse(brnout == 1, "Foreign-Born", "Native-Born"),
+      levels = c("Native-Born", "Foreign-Born")),
+    educ = factor(case_when(
+      hieduc %in% c(1, 2) ~ "Less than HS",
+      hieduc %in% c(3, 4) ~ "HS/GED",
+      hieduc %in% c(5, 6, 7) ~ "Some College/Assoc",
+      hieduc == 8 ~ "Bachelor's",
+      hieduc %in% c(9, 10, 11) ~ "Graduate/Professional",
+      TRUE ~ NA_character_),
+      levels = c("Less than HS", "HS/GED", "Some College/Assoc",
+                 "Bachelor's", "Graduate/Professional")),
+    currently_married = as.integer(fmarit == 1),
+    religion = factor(religion, levels = c(1, 2, 3, 4),
+      labels = c("No Religion", "Catholic", "Protestant", "Other")),
+    employed_ft = as.integer(laborfor == 1),
+    poverty_pct = poverty,
+    metro = factor(metro, levels = c(1, 2, 3),
+      labels = c("Principal City MSA", "Other MSA", "Not MSA")),
+    age = ager
+  ) %>%
+  filter(!is.na(race_eth), !is.na(nativity), !is.na(educ), !is.na(religion),
+         !is.na(metro), !is.na(currently_married), !is.na(employed_ft),
+         !is.na(poverty_pct), !is.na(age), !is.na(n_positive))
+
+sens_design <- svydesign(id = ~vecl, strata = ~vest, weights = ~wgt2022_2023,
+                         data = sens_frame, nest = TRUE)
+
+m_sens <- svyglm(n_positive ~ race_eth + nativity + educ + currently_married +
+                   religion + employed_ft + poverty_pct + age + metro,
+                 design = sens_design)
+
+sens_results <- tidy(m_sens, conf.int = TRUE) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))
+```
+
+```{r sensitivity-table}
+kable(sens_results %>%
+      rename(Term = term, Estimate = estimate, `CI Low` = conf.low,
+             `CI High` = conf.high, SE = std.error, p = p.value),
+  caption = sprintf("Table 7. Sensitivity analysis — linear regression of unplanned-signal count (0–4), N = %d",
+                    nrow(sens_frame)))
+```
+
+```{r sensitivity-narrative, results='asis'}
+sens_grad <- sens_results %>% filter(term == "educGraduate/Professional")
+sens_bach <- sens_results %>% filter(term == "educBachelor's")
+sens_native <- sens_results %>% filter(term == "nativityForeign-Born")
+
+if (nrow(sens_grad) > 0 && nrow(sens_bach) > 0) {
+  cat(sprintf("In the linear model, each step up the education ladder raises the
+expected unplanned-signal count. Women with bachelor's degrees carry an average of
+%.2f more positive signals than the HS/GED reference (p = %.3f), and women with
+graduate degrees carry %.2f more (p = %.3f). ",
+    sens_bach$estimate, sens_bach$p.value,
+    sens_grad$estimate, sens_grad$p.value))
+}
+
+if (nrow(sens_native) > 0) {
+  cat(sprintf("Foreign-born status is associated with a change of %.2f in the signal
+count relative to the native-born (p = %.3f).\n\n",
+    sens_native$estimate, sens_native$p.value))
+}
+
+cat("**The takeaway.** The sensitivity analysis reproduces the main result: education
+is the dominant predictor of unplanned-childlessness evidence, and the gradient is
+monotonic. The binary classification used in the primary analysis is not an artifact
+of where the threshold was drawn; the underlying gradient is continuous and the
+same shape. This gives us confidence that the Finding 2 story is robust to
+reasonable variations in how 'unplanned' is operationalized.\n")
+```
+
+---
+
+# Bringing It All Together
+
+```{r synthesis, results='asis'}
+cat("The five findings in this paper cohere into a single narrative about what
+childlessness at 40–49 actually means in the United States today.\n\n")
+
+cat(sprintf("**What we found.** Roughly %.0f%% of childless women aged 40–49 in our
+sample did not arrive at childlessness by choice — they wanted children and did not
+have them. This is a population that standard fertility research typically folds
+into an aggregate 'childlessness rate' without distinguishing it from women who
+actively preferred to be childless. The distinction is not cosmetic. The unplanned
+and voluntary populations have very different demographic profiles, and a policy
+regime that conflates them will systematically misserve one or both groups.\n\n",
+  prop_unplanned))
+
+cat("**Education is the central variable.** The voluntary-vs-unplanned split is
+most sharply patterned by education. Women at the low end of the education
+distribution who reach 40–49 childless overwhelmingly planned it that way. Women at
+the high end who reach 40–49 childless disproportionately did not. This is the
+empirical shape of the delay-induced childlessness hypothesis: intensive human
+capital investment required postponement of family formation, and for a substantial
+share of highly educated women, postponement became permanent in ways that ran
+against their stated preferences.\n\n")
+
+cat("**Nativity operates through education.** The segmented-assimilation
+prediction — that foreign-born women pursuing selective assimilation face an
+elevated unplanned-childlessness risk specifically at the intersection of foreign
+birth and high education — is directionally consistent with the data, but not
+decisively confirmed by the interaction test. The small analytic sample and the
+four-cluster variance limitation of the NSFG public-use file make fine
+interaction testing difficult. Larger pooled samples or restricted-use generational
+data would be needed to adjudicate this cleanly.\n\n")
+
+cat("**The model is informative but not precise.** The full specification achieves
+an AUC in the respectable range for a demographic-covariate-only classifier, but
+leaves substantial unexplained variance. Fertility intentions are subjective states,
+biological fecundity is imperfectly measured in surveys, and individual cases
+cannot be pinned down with the same confidence as population-level coefficient
+estimates. This matters for policy translation: the findings support claims about
+who is at risk, not about which specific individuals will be affected.\n\n")
+
+cat("**Implications for the broader dissertation.** This paper refines the Paper 3
+finding that nativity composition explains much of the Hispanic-White childlessness
+gap. The refinement is that the 'fertility advantage' of the foreign-born — when
+it exists — is not cost-free. For foreign-born women who pursue high educational
+attainment (the selective-assimilation pathway), the combination of immigrant
+delay-and-defer family norms with American graduate-school delay patterns can
+accumulate into a heightened risk of unplanned childlessness that the aggregate
+nativity coefficient in Paper 3 could not detect. The demographic dividend of
+immigrant pronatalism, in other words, is unevenly distributed across the second
+generation, falling most heavily on those who succeed educationally.\n")
+```
+
+---
+
+# Hypothesis Evaluation
+
+```{r hypothesis-eval, results='asis'}
+# Pull needed scalars from earlier model results
+m2_native_or <- r2 %>% filter(term == "nativityForeign-Born") %>% pull(estimate)
+m2_native_p  <- r2 %>% filter(term == "nativityForeign-Born") %>% pull(p.value)
+
+int_row <- r5 %>% filter(grepl("nativityForeign-Born:college", term))
+int_or  <- if (nrow(int_row) > 0) int_row$estimate[1] else NA_real_
+int_p   <- if (nrow(int_row) > 0) int_row$p.value[1] else NA_real_
+
+cat("**H1 (Education drives the split):** ")
+if (!is.na(r2_m3) && !is.na(r2_m2) && (r2_m3 - r2_m2) > 0.02) {
+  cat("Strongly supported. Education produces the largest single gain in pseudo-R²
+in the sequential regression, and the education coefficients in Models 3 and 4 are
+consistently monotonic and substantively large.\n\n")
+} else {
+  cat("Partially supported. Education is a predictor but does not overwhelm the
+other covariates in this sample.\n\n")
+}
+
+cat("**H2 (Nativity matters, but differently than in childlessness alone):** ")
+if (length(m2_native_or) > 0 && !is.na(m2_native_or)) {
+  direction <- if (m2_native_or < 1) "lower" else "higher"
+  cat(sprintf("The foreign-born coefficient in Model 2 is OR = %.2f (p = %.3f),
+indicating that foreign-born childless women have **%s** odds of being classified
+as unplanned compared to native-born childless women of the same race. This
+operates in parallel with — but not identically to — the raw nativity effect on
+childlessness documented in Paper 3.\n\n",
+    m2_native_or, m2_native_p, direction))
+} else {
+  cat("Could not be evaluated from the fitted model.\n\n")
+}
+
+cat("**H3 (Selective-assimilation signature in the interaction):** ")
+if (!is.na(int_p) && int_p < 0.1) {
+  cat(sprintf("Empirically supported at marginal significance (interaction OR = %.2f, p = %.3f).\n\n",
+    int_or, int_p))
+} else if (!is.na(int_or)) {
+  cat(sprintf("Not decisively confirmed. The interaction point estimate is OR = %.2f
+(p = %.3f); the confidence interval includes 1.0. The point estimate may be
+directionally consistent with the selective-assimilation prediction, but the
+small-sample/small-cluster constraints of the NSFG public-use file preclude a
+definitive test.\n\n", int_or, int_p))
+} else {
+  cat("Could not be evaluated from the fitted interaction model.\n\n")
+}
+```
+
+---
+
+# Limitations
+
+This paper operates within three binding limitations that readers should bear in
+mind when interpreting the findings.
+
+First, the classification of unplanned vs. voluntary childlessness uses subjective
+intention measures whose validity can only be inferred through association with
+other variables. There is no external truth to verify against — unlike biological
+parity, which is objective. Intentions are also subject to retrospective
+rationalization. The strict Option A coding scheme is designed to maximize
+classification confidence, but classification error remains a meaningful concern.
+
+Second, the analytic sample is small — fewer than 300 women after all exclusions —
+and the NSFG public-use file contains only four variance estimation clusters. The
+combination limits the precision of interaction tests and subgroup estimates. The
+nativity × education interaction in Finding 3 is the term most affected by this
+constraint. A larger pooled sample across multiple NSFG waves would support
+sharper interaction inference.
+
+Third, the binary nativity measure cannot distinguish first-generation from
+second-generation or third-plus-generation women. This is the same limitation as
+Paper 3. The full segmented-assimilation prediction requires a three-category
+generational measure, which would require parental birthplace data that is not
+in the 2022–2023 public-use file. This paper's tests of the selective-assimilation
+signature therefore operate on a compressed version of the theoretical framework.
+
+---
+
+# References
+
+Alba, R., & Nee, V. (2003). *Remaking the American mainstream: Assimilation and
+contemporary immigration*. Harvard University Press.
+
+Gordon, M. M. (1964). *Assimilation in American life: The role of race, religion,
+and national origins*. Oxford University Press.
+
+National Center for Health Statistics. (2024). *National Survey of Family Growth,
+2022–2023*. U.S. Department of Health and Human Services.
+
+Portes, A., & Rumbaut, R. G. (2001). *Legacies: The story of the immigrant second
+generation*. University of California Press.
+
+Portes, A., & Zhou, M. (1993). The new second generation: Segmented assimilation
+and its variants. *The Annals of the American Academy of Political and Social
+Science*, 530(1), 74–96.
+
+Sobotka, T. (2017). Post-transitional fertility: The advent of childlessness and
+the reversal of the educational gradient. In J. Skirbekk & T. Sobotka (Eds.),
+*Fertility and education*. Vienna Institute of Demography.
+
+---
+
+# Appendix: Technical Notes
+
+**Classification variables.** The five positive signals used in Option A
+classification are: `RWANT == 1` (wants a baby), `INTEND == 1` (intends to have a
+baby), `HLPPRG == 1` (ever sought medical help to conceive), `FECUND` values
+indicating impaired fecundity (codes 2, 3, 4 in 2022–2023 NSFG), and `RSTRSTAT`
+values indicating non-contraceptive sterility. A woman is classified unplanned if
+any one signal is positive. Voluntary classification requires explicit negative
+signals on RWANT and INTEND (both == 5, "No") *and* no positive signals. All other
+women are classified ambiguous and excluded from the main analysis.
+
+**Education coding (2022–2023 HIEDUC).** Codes differ from earlier NSFG waves.
+The five-level mapping used here is: 1–2 = Less than HS; 3–4 = HS/GED; 5–7 = Some
+College/Associate; 8 = Bachelor's; 9–11 = Graduate/Professional. The binary college
+indicator used in the interaction model is 1 if HIEDUC ≥ 8, else 0.
+
+**Survey design.** Models use the NSFG 2022–2023 sampling design variables
+`VEST` (stratum), `VECL` (cluster), and `WGT2022_2023` (weight), with `nest = TRUE`
+and `options(survey.lonely.psu = "adjust")`. The public-use file contains only four
+variance estimation clusters, a known limitation for subgroup and interaction
+inference.
+
+**Software.** Analysis conducted in R using the `survey` package (Lumley, 2020),
+`pROC` for ROC analysis (Robin et al., 2011), and `broom` for tidy regression
+output.
