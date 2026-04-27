@@ -1,0 +1,73 @@
+What I Found in the Actual SCF 2022 Codebook
+I pulled the official Federal Reserve codebook (codebk2022.txt), the official Federal Reserve bulletin.macro.txt macro file, and the SDA Berkeley combined extract documentation. Here's what's actually in the SCF — variable by variable — for fertility, household composition, and immigration analysis. Every claim below traces to a Federal Reserve source I read directly.
+The X5712 Question — Definitively Settled
+X5712 is capital gains income (variable name KGINC in the Federal Reserve summary file). The official bulletin.macro.txt defines the income variables explicitly:
+WAGEINC = X5702
+BUSSEFARMINC = X5704+X5714
+INTDIVINC = X5706+X5708+X5710
+KGINC = X5712              ← capital gains income
+SSRETINC = X5722
+TRANSFOTHINC = X5716+X5718+X5720+X5724
+RENTINC = X5714
+Your manual lookup was correct. The third-party document was wrong about this — and the same logic disposes of every other "fertility variable" claim it made:
+
+"X5701 = ever had biological children" — false. X5701 is in the income variable range; it's not even on the list of demographic variables.
+"X5710 = biological children living with respondent" — false. X5710 is interest/dividend income (a INTDIVINC component).
+"X5711 = biological children not living with respondent" — false. Same range, also financial.
+The whole "fertility module X5701–X5708" — does not exist. That entire range is income components.
+
+The third-party document essentially fabricated a fertility module that the SCF has never had. It also misrepresented the X707 series (relationship codes are in the X8020/X102/X108–X226 sequence in the actual codebook, with codes 1=respondent, 2=spouse, 3=partner, 4=child, 5=grandchild, 6=parent, 36=foster child, etc., and the public file collapses several of these — code 12 → 5; 31, 32, 36 → 39; 9, 10 → 29). The roster does exist; the document just got the variable numbers wrong in some cases and made up entire sections in others.
+What the SCF Actually Has for Household Composition
+The household roster is real, and it's richer than what we used in Paper 2. Up to 12 people can be enumerated. For each person, the SCF captures:
+
+Relationship to respondent (X8020, X102, X108–X226): biological/in-law child = 4, grandchild = 5, parent = 6, foster child = 36 (in internal data; collapsed into 39 in public). With this you can distinguish a respondent's biological/step children from grandchildren they're raising, from foster children, etc.
+Sex of each person (X8021, X103, X109–X227)
+Age (X14 reconciled age for respondent, X19 for spouse, X8022/X104/X110... for others)
+Marital status of each member 18+ (X8023/X105/X111... — codes 1=married, 2=living with partner, 3=separated, 4=divorced, 5=widowed, 6=never married; public file collapses 3 and 5 into 4, and 2 into 1 except for the respondent and spouse positions)
+Whether each person usually lives there (X8024/X106/X112...)
+Whether each person is financially dependent on the PEU (X8098/X107/X113...)
+
+There's also a derived KIDS variable in the Federal Reserve summary extract dataset, which the SDA Berkeley codebook describes as: includes natural children, step-children, and foster children of household reference person or spouse/partner — built from the household listing. It counts co-resident children only.
+What the SCF Does Not Have for Fertility
+This is the critical gap, and it's the same gap we identified before:
+
+No "biological children ever born" question. There is no NSFG-style fertility module. The respondent is never asked how many biological children they have had — only what their household composition is right now.
+No fertility intentions question. Nothing equivalent to NSFG's RWANT (do you want a/another child) or INTEND (do you intend to have a/another child).
+No fecundity / impaired fertility question. Nothing equivalent to NSFG's FECUND (currently surgically sterile, non-surgically sterile, sub-fecund) or RSTRSTAT (sterilization status).
+No help-seeking question. Nothing equivalent to NSFG's HLPPRG (have you ever sought medical help to get pregnant).
+No voluntary-vs-involuntary childlessness item. The survey simply doesn't ask why someone has no children. The X5712 claim was wrong.
+
+This means the SCF cannot construct an unplanned-childlessness outcome. The five signals we use in NSFG (RWANT, INTEND, HLPPRG, FECUND, RSTRSTAT) have no SCF equivalent — none. This is not a matter of better proxies; the survey simply does not collect this content. Childless respondents are observable in SCF (zero children in the household roster, never married/widowed/divorced/single, age past childbearing range), but the SCF can't tell you whether their childlessness is voluntary, involuntary, postponed, or ambiguous.
+What the SCF Does Have for Immigration Analysis
+The 2022 SCF added a substantial new immigration-related block — confirmed by the Federal Reserve announcement page and listed in the codebook's "Variables added since 2022" section:
+
+X7404 — Respondent's national origin (ancestry/ethnic origin)
+X7437–X7443 — Years lived in the United States (respondent and spouse)
+X8049–X8054 — Spouse's race/ethnicity (mirrors what was already asked of respondents)
+X8055–X8057 — Spouse's national origin
+X6906, X7796, X6915–X6917 — Other new identity-related items (national origin follow-ups)
+
+The race/ethnicity infrastructure has always been there:
+
+X6809 — respondent's racial/ethnic identity (Hanna & Lindamood 2008 confirmed this; in the public file it's collapsed to 4 categories — White non-Hispanic, Black non-Hispanic, Hispanic, Other; in the internal file it's 5 categories with Asian split out from Other in 2022)
+X6810 — secondary race
+The Federal Reserve's bulletin.macro.txt builds derived variables racecl, racecl4, racecl5, racecl_ex from these, with 2022 splitting Asian out as its own category for the first time
+
+This is genuinely useful for an immigration analysis. You could test things like:
+
+Wealth and income gradients by years-in-US (using X7437–X7443)
+Financial-balance-sheet differences by national origin (X7404)
+Mixed-nativity household effects by combining respondent and spouse nativity/origin
+
+But — and this is the crucial limitation for your thesis frame — there's no parental nativity variable. SCF doesn't ask whether the respondent's parents were born in the US, so you cannot construct a 1st/2nd/3rd-generation breakdown the way Paper 3 does in NSFG. You'd be limited to a 1st-vs-other split (foreign-born vs. US-born), with years-in-US as a continuous refinement for the foreign-born group.
+What This Means for Your Thesis
+Paper 4 (unplanned childlessness): NSFG framework is the only option. The SCF cannot support this analysis. The third-party document's claim of a direct voluntary/involuntary item was fabricated; the actual survey has no fertility intentions, fecundity, or help-seeking content at all. V1 stands.
+Paper 1 (credit card debt) and Paper 2 (childlessness/parental status): SCF remains correct. Paper 2 in particular benefits from re-examining the household roster — you may be able to refine the parental-status proxy by distinguishing biological/step children from grandchildren and foster children (which the X8020 series allows). That's a legitimate V5 improvement to consider, though not a fundamental redesign.
+A possible Paper 5 (financial life of immigrant-headed households): genuinely viable in SCF. This would lean on the new 2022 immigration variables — years-in-US, national origin, mixed-nativity couples — and test wealth/debt outcomes. It's a different paper from your current four, not a replacement for any of them. Whether you want to pursue it depends on how much methodological scope you have left.
+Closing Note on Variable Verification
+For future verification of any SCF variable claim, the two authoritative sources are:
+
+The codebook itself: https://www.federalreserve.gov/econres/files/codebk2022.txt
+The Federal Reserve's official bulletin.macro.txt summary-variable program, which defines what each X-variable represents in the canonical Federal Reserve analysis: https://www.federalreserve.gov/econres/files/bulletin.macro.txt
+
+The Codebook Search tool at https://www.federalreserve.gov/apps/scfcb is the easiest interface for spot-checking individual variables. If a third-party document (or LLM output) makes a confident claim about an SCF variable that doesn't appear in those Federal Reserve sources, it's wrong.
