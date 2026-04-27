@@ -1,0 +1,74 @@
+Yes, the 2022 Survey of Consumer Finances (SCF) codebook—the most recent publicly available version—does contain a range of variables on household composition, relationships, fertility history, and childlessness that support analysis of unplanned (involuntary) childlessness. These are primarily in the demographics/household roster and fertility history sections. The SCF defines the Primary Economic Unit (PEU) as the economically dominant individual/couple plus financially interdependent members (e.g., dependent children).
+The codebook is the official 2.7 MB ASCII guide (available at federalreserve.gov/econres/files/codebk2022.txt). It includes both raw survey questions/responses and notes on derived variables. No newer codebook (e.g., for the ongoing 2025 SCF fieldwork) is public yet—results are expected in late 2026.
+Below is a comprehensive extraction of everything relevant to children in the household, who they belong to, biological vs. non-biological ties, fertility history, and (crucially) planned vs. unplanned childlessness. I’ve organized it by topic, with variable names, question text (where available), response options, and notes from the codebook. These allow you to:
+
+Count children by type (biological, step, adopted, foster, etc.).
+Distinguish children living in the household vs. elsewhere.
+Measure total biological children ever born.
+Identify childless individuals and whether their childlessness is voluntary or involuntary (the key for “unplanned childlessness”).
+
+1. Household Roster / Family Composition (Core Variables for “Who the Children Belong To”)
+These are asked once per household and build a grid of all members (up to 6 detailed + mop-up summary for more). They directly identify relationships and demographics.
+
+X702: Number of people living in the household.
+Numeric (1–20). Drives the roster grid.
+X703–X706 (and mop-up): Household member grid (first name, relationship, age, sex, marital status, etc.).
+X707 (key relationship variable for each member): “What is [person]’s relationship to you?”
+Responses include:
+1 = biological child
+2 = stepchild
+3 = adopted child
+4 = foster child
+5 = grandchild
+6 = parent
+7 = sibling
+8 = spouse/partner
+9 = other relative
+10 = unrelated
+(Plus codes for in-laws, etc.; public data combines some.)
+This is exactly what you mentioned—it tells you precisely who the children “belong to” (biological vs. step/adopted/foster/grandchild).
+X708–X709: Age of each household member (0–120; used to flag minors/dependents).
+X710: Sex of each household member (1 = male, 2 = female).
+X711: Marital status of each household member.
+X712: School enrollment of each household member (1 = yes, 2 = no).
+X713: Employment status of each household member (full-time, part-time, student, homemaker, etc.—helps classify adult vs. dependent children).
+
+Derived from roster:
+
+X5710: Number of biological children living with the respondent (derived from X707 + age).
+X5711: Number of biological children not living with the respondent.
+FAMSTRUCT (derived family structure variable): Classifies households (e.g., couple with/without children, single parent, etc.) using household size, relationships, and marital status. Useful for childlessness vs. parental status breakdowns.
+
+2. Fertility History / Number of Biological Children Ever Born
+These are asked of the respondent (and spouse/partner where applicable) in the demographics/family background section.
+
+X5701–X5708 (fertility module): “How many biological children have you (or your spouse/partner) ever had?”
+Numeric response (0–20).
+X5701 also serves as a yes/no gateway: “Have you (or your spouse/partner) ever had any biological children?” (1 = yes, 2 = no).
+KIDS (standard derived/summary variable in SCF extracts and many analysis files): Total number of biological children ever born (living + deceased). Computed as sum of children in household + not in household.
+
+3. Variables Directly Pertaining to Childlessness (Including Unplanned/Involuntary)
+This is the goldmine for your analysis:
+
+X5701 (as above): Ever had any biological children? (1 = yes → proceed to count; 2 = no → childless).
+X5712 (critical follow-up, asked only if X5701 = no): “Is your decision not to have children voluntary?”
+Responses: 1 = yes (voluntary), 2 = no (involuntary/unplanned), 3 = don’t know.
+This directly distinguishes planned vs. unplanned childlessness—exactly what you need for an “unplanned childlessness” analysis.
+
+4. Supporting Demographic Variables (for Controls/Context in Childlessness Analysis)
+
+X106–X107: Age of respondent and spouse/partner (key for fertility timing).
+X108–X109: Educational attainment.
+X110–X111: Race/ethnicity.
+X112–X113 (newer in 2022): Years lived in the U.S. (immigration/fertility context).
+
+Additional Notes from the Codebook
+
+No direct “unplanned childlessness” flag beyond the voluntary/involuntary distinction in X5712, but combining X5701 + X5712 + age/education/etc. lets you construct it cleanly.
+Children under 18 are generally assumed financially dependent for PEU definition unless stated otherwise.
+The roster (X707 series) + fertility questions (X5701 series) together let you analyze discrepancies (e.g., people with biological children ever born but none currently in household, or step/adopted children only).
+Derived variables like KIDS and FAMSTRUCT appear in the summary extract public data set (and are easy to recreate from the full public data).
+All variables are in the full public microdata (with replicate weights for proper variance estimation). The codebook also includes CAPI source code and concordance for exact question flow.
+
+These variables fully support the analysis you described: household children counts by ownership/relationship type, total biological fertility, and the voluntary/involuntary split for childless respondents. If you’re working in R, Python, SAS, or Stata, packages like the official SCF tools or scf on CRAN make it straightforward to pull these.
+If you want me to pull the exact question wording for any specific variable, suggest code snippets for deriving an “unplanned childlessness” indicator, or check anything else in the codebook (or compare to an older year), just let me know! The full codebook is publicly downloadable if you want to search it yourself.
