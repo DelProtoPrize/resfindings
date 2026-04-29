@@ -90,8 +90,19 @@ for (pkg in required_packages) {
 
 dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
 original_wd <- getwd()
+
+# Move into the data folder
 setwd("scf_data")
 
+library(haven)
+
+# Read from your local absolute path
+raw_macro_df <- read_dta("C:/Users/delro/OneDrive/Documents/scf2022s/p22i6.dta")
+
+# Save directly to the current working directory (which is already scf_data)
+saveRDS(raw_macro_df, "p22i6.rds") 
+
+# Continue with the download check for the bulletin extract
 if (!file.exists("scf2022.rds")) {
   tryCatch({
     scf_download(2022)
@@ -100,6 +111,7 @@ if (!file.exists("scf2022.rds")) {
   })
 }
 
+# Return to the root project directory
 setwd(original_wd)
 ```
 
@@ -109,8 +121,8 @@ scf_2022 <- scf_load(2022, data_directory = "scf_data")
 
 # Variable Availability and Diagnostic
 
-Before constructing variables, we check which of the new 2022 immigration variables are
-actually exposed in the loaded `scf` package object. The standard SCF Bulletin extract
+Before constructing variables, we check which of the variables having direct exposure without segmented assimilation theory are
+actually available in the loaded `scf` package object. The standard SCF Bulletin extract
 that the `scf` package builds does not by default include the new national-origin or
 years-in-U.S. items (`X7404`, `X7437`–`X7443`); these are raw codebook items rather than
 constructed Bulletin variables. If they are missing, we read the raw 2022 SCF `.rds`
@@ -120,7 +132,7 @@ file directly and merge them in by household ID.
 imp1 <- scf_2022$mi_design[[1]]$variables
 
 # Variables we need
-imm_vars <- c("X7404", "X7437", "X7438", "X7439", "X7440",
+imm_vars <- c("X6915", "X7404", "X7437", "X7438", "X7439", "X7440",
               "X7441", "X7442", "X7443", "X8000", "X8049")
 
 present_in_extract <- imm_vars %in% names(imp1)
@@ -160,7 +172,7 @@ if (need_raw_merge) {
 #
 # We try a few candidate filenames defensively.
 
-if (need_raw_merge) {
+if (need_raw_merge) 
 
   raw_candidates <- c(
     file.path("scf_data", "p22i6.rds"),
@@ -178,14 +190,25 @@ if (need_raw_merge) {
     # Standardize variable name casing — the raw file may have either
     # uppercase or lowercase. We try uppercase first since X-variables
     # are conventionally uppercase.
+    raw_path <- raw_candidates[file.exists(raw_candidates)][1]
+
+  if (!is.na(raw_path)) {
+    raw_data <- readRDS(raw_path)
+
+    # FIX: Force all raw data columns to uppercase immediately.
+    # This aligns the Stata output with the canonical SCF uppercase format.
+    names(raw_data) <- toupper(names(raw_data))
+
     raw_names <- names(raw_data)
+    
+    # The name_map is now technically redundant, but safe to keep
     name_map <- setNames(raw_names, toupper(raw_names))
 
     available_imm <- imm_vars[toupper(imm_vars) %in% toupper(raw_names)]
 
     # The raw data has 5 implicates stacked. We need an ID that matches
     # the bulletin extract's row ordering. Common candidates: y1, yy1, x1.
-    id_candidates <- c("y1", "yy1", "Y1", "YY1", "X1")
+    id_candidates <- c("Y1", "YY1", "X1") # Updated to only look for uppercase
     id_var <- id_candidates[id_candidates %in% raw_names][1]
 
     if (!is.na(id_var) && length(available_imm) > 0) {
@@ -210,8 +233,8 @@ if (need_raw_merge) {
             scf_2022$mi_design[[i]]$variables[[v]] <- imm_chunk[[v]]
           }
         }
-        cat("Successfully merged", length(available_imm), "immigration variables ",
-            "from", raw_path, "into all 5 implicates.\n", sep = "")
+        cat("Successfully merged ", length(available_imm), " immigration variables ",
+            "from ", raw_path, " into all 5 implicates.\n", sep = "")
       } else {
         cat("Row-count mismatch: raw file has ", n_total,
             " rows, bulletin extract has ", n_per_imp,
@@ -247,42 +270,286 @@ have_X8049 <- "X8049" %in% names(imp1)
 # table so we can adjust the recode.
 
 if (have_X7404) {
-  x7404_freq <- scf_2022$mi_design[[1]]$variables %>%
-    count(X7404, name = "n") %>%
-    arrange(desc(n))
+  # 1. Extract the column and force it to a standard numeric vector
+  # This strips out any problematic 'haven_labelled' metadata from Stata
+  x7404_vec <- as.numeric(scf_2022$mi_design[[1]]$variables$X7404)
+  
+  # 2. Use Base R's table() to get the counts, which avoids package conflicts
+  freq_table <- table(x7404_vec, useNA = "ifany")
+  
+  # 3. Reconstruct it into a clean data frame for kable
+  x7404_freq <- data.frame(
+    X7404 = names(freq_table),
+    n = as.integer(freq_table)
+  )
+  
+  # 4. Sort descending
+  x7404_freq <- x7404_freq[order(-x7404_freq$n), ]
 
   cat("**Raw X7404 frequency (Implicate 1, unweighted):**\n\n")
-  print(kable(x7404_freq, caption = "X7404 = respondent national origin"))
+  # row.names = FALSE keeps the markdown table perfectly clean
+  print(kable(x7404_freq, caption = "X7404 = respondent national origin", row.names = FALSE))
   cat("\n\nThis table guides the origin-region recode in the next chunk. ",
       "Code 0 typically indicates 'inapplicable' (i.e., U.S.-born or non-respondent).\n\n",
       sep = "")
 }
 ```
 
+```{r visuals}
+
+library(ggplot2)
+library(dplyr)
+
+# ============================================================================
+# Visualize X7404 Frequencies: Spouse Hispanic/Latino Culture/Origin
+# ============================================================================
+
+# 1. SCF mapping for X7404
+spouse_hisp_labels <- c(
+  "0" = "Inapplicable (No Spouse/Partner)",
+  "1" = "Yes (Spouse is Hispanic/Latino)",
+  "5" = "No (Spouse is not Hispanic/Latino)"
+)
+
+# 2. Apply labels and generate plot
+x7404_freq %>%
+  mutate(
+    # Map the numeric codes to our accurate text labels
+    Spouse_Label = spouse_hisp_labels[as.character(X7404)],
+    # Catch any unexpected codes just in case
+    Spouse_Label = ifelse(is.na(Spouse_Label), paste("Code", X7404), Spouse_Label)
+  ) %>%
+  # Order the bars by frequency 
+  ggplot(aes(x = reorder(Spouse_Label, n), y = n)) +
+  geom_col(fill = "steelblue", color = "black", alpha = 0.8) +
+  coord_flip() + # Horizontal layout for readability
+  theme_minimal() +
+  labs(
+    title = "Spouse/Partner Hispanic or Latino Origin",
+    subtitle = "Raw frequencies from Implicate 1 (Variable X7404)",
+    x = NULL, 
+    y = "Number of Respondents"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 11)
+  )
+
+```
+
+
+
+```{r plot-x6915, echo=FALSE, warning=FALSE, message=FALSE}
+# ============================================================================
+# Visualize X6915 Frequencies: Reference Person National Origin
+# ============================================================================
+
+library(ggplot2)
+library(dplyr)
+
+# FIX: Explicitly define have_X6915 so the Knit session knows what it is!
+have_X6915 <- "X6915" %in% names(scf_2022$mi_design[[1]]$variables)
+
+if (have_X6915) {
+  
+  x6915_vec <- as.numeric(scf_2022$mi_design[[1]]$variables$X6915)
+  freq_table_6915 <- table(x6915_vec, useNA = "ifany")
+  
+  x6915_freq <- data.frame(
+    X6915 = names(freq_table_6915),
+    n = as.integer(freq_table_6915)
+  )
+  
+  origin_labels <- c(
+    "0" = "U.S. Born / Inapplicable",
+    "100" = "Western European", 
+    "200" = "Eastern European",
+    "300" = "European",
+    "400" = "West Indies",
+    "500" = "Central and South American", 
+    "600" = "Middle Easterner",
+    "700" = "Sub-Saharan African",
+    "800" = "South Asian",
+    "900" = "East Asian",
+    "1000" = "All Other Asians",
+    "1100" = "Pacific Islander",
+    "1200" = "American"
+  )
+  
+  p_x6915 <- x6915_freq %>%
+    mutate(
+      Origin_Label = origin_labels[as.character(X6915)],
+      Origin_Label = ifelse(is.na(Origin_Label), paste("Code", X6915), Origin_Label)
+    ) %>%
+    filter(X6915 != "0") %>% 
+    ggplot(aes(x = reorder(Origin_Label, n), y = n)) +
+    geom_col(fill = "seagreen", color = "black", alpha = 0.8) +
+    coord_flip() + 
+    theme_minimal() +
+    labs(
+      title = "Reference Person National Origin (Immigrant Sub-sample)",
+      subtitle = "Unweighted frequencies from Implicate 1 (Variable X6915, excluding U.S. Born)",
+      x = NULL, 
+      y = "Number of Respondents"
+    ) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.text.y = element_text(size = 11)
+    )
+  
+  # Properly print the plot
+  print(p_x6915)
+  
+} else {
+  cat("Variable X6915 not found. Please ensure the merge chunk was re-run.")
+}
+```
+
+```{r table-x6915, echo=FALSE, results='asis'}
+# Print the raw counts table
+if (have_X6915) {
+  cat("\n\n**Raw X6915 frequency (Implicate 1, unweighted):**\n\n")
+  tab <- knitr::kable(x6915_freq %>% arrange(desc(n)), row.names = FALSE)
+  cat(paste(tab, collapse = "\n"), "\n\n")
+}
+```
+
+
 # Variable Engineering
 
-```{r variable-engineering}
+```{r data-engineering-and-subsetting, warning=FALSE, message=FALSE}
 # ============================================================================
-# Build all analysis variables using scf_update — same pattern as Paper 1
+# Build all analysis variables and create the analytic subset
 # ============================================================================
-# scf_update takes the scf_2022 object and adds variables to all 5 implicates
-# at once. Variable names from the bulletin extract are lowercase
-# (income, networth, ccbal, kids, edcl, racecl4, hhsex, age, married, etc.)
 
-# ---- Step 1: Foreign-born status from years-in-US variables ----
-# X7437–X7443 are reported across multiple roster positions; we take the
-# parallel maximum (a non-zero value indicates foreign-born status).
+# ---- Step 1: Foreign-born status (from X6915) & Years in US ----
+scf_2022 <- scf_update(scf_2022,
+  # 1. Trust X6915 for immigrant status!
+  foreign_born = as.integer(as.numeric(X6915) != 0)
+)
 
 if (have_yiu) {
-  # Build the pmax expression dynamically over whichever YIU variables
-  # actually loaded.
-  yiu_vars_present <- c("X7437", "X7438", "X7439", "X7440",
-                        "X7441", "X7442", "X7443")
-  yiu_vars_present <- yiu_vars_present[yiu_vars_present %in% names(imp1)]
-
   scf_2022 <- scf_update(scf_2022,
     years_in_us_raw = suppressWarnings(
-      do.call(pmax, c(mget(yiu_vars_present), list(na.rm = TRUE)))
+      pmax(X7437, X7438, X7439, X7440, X7441, X7442, X7443, na.rm = TRUE)
+    )
+  )
+  scf_2022 <- scf_update(scf_2022,
+    years_in_us  = ifelse(years_in_us_raw <= 0 | is.infinite(years_in_us_raw), NA_real_, years_in_us_raw),
+    # 2. Missing-indicator method to prevent listwise deletion in regressions
+    yiu_missing  = as.integer(is.na(years_in_us)),
+    yiu_clean    = ifelse(is.na(years_in_us), 0, years_in_us)
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022,
+    years_in_us = NA_real_, yiu_missing = 1L, yiu_clean = 0
+  )
+}
+
+# ---- Step 2: Origin-region recode from X6915 ----
+if (have_X6915) {
+  scf_2022 <- scf_update(scf_2022,
+    origin_region = factor(case_when(
+      as.numeric(X6915) == 500 ~ "Mexican/Latin American",
+      as.numeric(X6915) == 400 ~ "Other Caribbean/West Indies",
+      as.numeric(X6915) %in% c(800, 900, 1000) ~ "Asian",
+      as.numeric(X6915) %in% c(100, 200, 300) ~ "European/Other developed",
+      as.numeric(X6915) %in% c(600, 700, 1100, 1200) ~ "Other",
+      TRUE ~ NA_character_
+    ), levels = c("Mexican/Latin American", "Other Caribbean/West Indies", 
+                  "Asian", "European/Other developed", "Other"))
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022, origin_region = factor(NA_character_))
+}
+
+# ---- Step 2b: Spouse/Partner Hispanic Culture/Origin from X7404 ----
+if (have_X7404) {
+  scf_2022 <- scf_update(scf_2022,
+    spouse_hisp_origin = factor(case_when(
+      X7404 == 1 ~ "Yes (Spouse Hispanic/Latino)",
+      X7404 == 5 ~ "No (Spouse not Hispanic/Latino)",
+      X7404 == 0 ~ "Unmarried/Inapplicable",
+      TRUE ~ NA_character_
+    ), levels = c("Yes (Spouse Hispanic/Latino)", "No (Spouse not Hispanic/Latino)", "Unmarried/Inapplicable"))
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022, spouse_hisp_origin = factor(NA_character_))
+}
+
+# ---- Step 3: Race/ethnicity ----
+scf_2022 <- scf_update(scf_2022,
+  race_cat = factor(racecl4, levels = 1:4, labels = c("White", "Black", "Hispanic", "Other"))
+)
+
+# ---- Step 4: Standard demographic controls ----
+scf_2022 <- scf_update(scf_2022,
+  age_centered = age - 50,
+  age_sq       = age^2,
+  in_age_range = as.integer(age >= 25 & age <= 75),
+  educ_cat = factor(case_when(
+    educ < 8 ~ "Less than HS",
+    educ == 8 ~ "High School",
+    educ %in% 9:11 ~ "Some College",
+    educ == 12 ~ "College Degree",
+    educ %in% 13:14 ~ "Graduate School/PhD",
+    TRUE ~ NA_character_
+  ), levels = c("Less than HS", "High School", "Some College", "College Degree", "Graduate School/PhD")),
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  is_homeowner      = as.integer(housecl == 1),
+  has_pension       = as.integer(anypen == 1),
+  log_income        = log(pmax(1, income)),
+  asinh_networth    = asinh(networth),
+  log_wageinc       = log(pmax(1, wageinc))
+)
+
+# ---- Step 5: Outcomes ----
+scf_2022 <- scf_update(scf_2022,
+  own_retire    = as.integer(retqliq > 0),
+  own_stocks    = as.integer(stocks > 0),
+  credit_denied = as.integer(turndown == 1),
+  no_checking   = as.integer(checking <= 0),
+  own_home      = as.integer(housecl == 1),
+  nw_pctl       = 100 * percent_rank(networth)
+)
+
+# ---- Step 6: Analytic sample flag ----
+scf_2022 <- scf_update(scf_2022,
+  in_analytic_sample = as.integer(
+    foreign_born == 1 &
+    !is.na(origin_region) &
+    in_age_range == 1
+  )
+)
+
+# ---- Step 7: Create the Analytic Sample Subset ----
+scf_fb <- scf_2022
+scf_fb$mi_design <- lapply(scf_2022$mi_design, function(des) {
+  subset(des, in_analytic_sample == 1)
+})
+
+# Diagnostic: report sample size
+n_fb <- nrow(scf_fb$mi_design[[1]]$variables)
+```
+
+```{r build-foreign-born-design}
+# ============================================================================
+# Build the foreign-born subset design — same pattern as scf_debtors in Paper 1
+# ============================================================================
+
+# ============================================================================
+# Create the Analytic Sample (Foreign-Born only)
+# ============================================================================
+
+
+# ---- Step 1: Foreign-born status from years-in-US variables ----
+if (have_yiu) {
+  scf_2022 <- scf_update(scf_2022,
+    # Bypass mget scope issues by hardcoding the variables inside pmax
+    years_in_us_raw = suppressWarnings(
+      pmax(X7437, X7438, X7439, X7440, X7441, X7442, X7443, na.rm = TRUE)
     )
   )
 
@@ -298,114 +565,12 @@ if (have_yiu) {
   )
 }
 
-# ---- Step 2: Origin-region recode from X7404 ----
-# IMPORTANT: this is a placeholder mapping. After the first knit, examine
-# the X7404 frequency table printed above and adjust the case_when ranges
-# to match the actual codebook. The five-category structure is fixed by
-# thesis design; only the numeric ranges below need calibration.
-
-if (have_X7404) {
-  scf_2022 <- scf_update(scf_2022,
-    origin_region = factor(case_when(
-      X7404 %in% 100:199 ~ "Mexican",
-      X7404 %in% 200:399 ~ "Other Latin American/Caribbean",
-      X7404 %in% 400:599 ~ "Asian",
-      X7404 %in% 600:799 ~ "European/Other developed",
-      X7404 %in% 800:999 ~ "Other",
-      TRUE               ~ NA_character_
-    ), levels = c("Mexican",
-                  "Other Latin American/Caribbean",
-                  "Asian",
-                  "European/Other developed",
-                  "Other"))
-  )
-} else {
-  scf_2022 <- scf_update(scf_2022,
-    origin_region = factor(NA_character_,
-      levels = c("Mexican",
-                 "Other Latin American/Caribbean",
-                 "Asian",
-                 "European/Other developed",
-                 "Other"))
-  )
-}
-
-# ---- Step 3: Race/ethnicity (existing bulletin variable + swap correction) ----
-# The bulletin extract supplies racecl4 directly (1=White, 2=Black, 3=Hispanic,
-# 4=Other). The X8000=1 swap correction is already applied inside the bulletin
-# macro for the public file, so racecl4 is already corrected.
-
-scf_2022 <- scf_update(scf_2022,
-  race_cat = factor(racecl4,
-    levels = 1:4,
-    labels = c("White", "Black", "Hispanic", "Other")
-  )
-)
-
-# ---- Step 4: Standard demographic controls ----
-scf_2022 <- scf_update(scf_2022,
-  age_centered = age - 50,
-  age_sq       = age^2,
-  in_age_range = as.integer(age >= 25 & age <= 75),
-
-  educ_cat = factor(edcl,
-    levels = 1:4,
-    labels = c("Less than HS", "High School", "Some College", "College Degree")
-  ),
-
-  female            = as.integer(hhsex == 2),
-  currently_married = as.integer(married == 1),
-  has_children      = as.integer(kids > 0),
-  is_homeowner      = as.integer(housecl == 1),
-  has_pension       = as.integer(anypen == 1),
-
-  log_income        = log(pmax(1, income)),
-  asinh_networth    = asinh(networth),
-  log_wageinc       = log(pmax(1, wageinc))
-)
-
-# ---- Step 5: Outcomes — three-pathway design ----
-# All outcomes are constructed from bulletin-extract variables that exist
-# in every wave, so no presence checks needed.
-
-scf_2022 <- scf_update(scf_2022,
-
-  # Parallel integration: mainstream financial-system participation
-  own_retire = as.integer(retqliq > 0),       # any retirement-account assets
-  own_stocks = as.integer(stocks > 0),         # direct stock ownership
-
-  # Downward assimilation: structural barriers
-  credit_denied = as.integer(turndown == 1),   # turned down or got less in past 12 mo
-  no_checking   = as.integer(checking <= 0),   # no checking-account balance
-
-  # Selective assimilation: asset accumulation
-  own_home  = as.integer(housecl == 1),        # owns primary residence
-  nw_pctl   = 100 * percent_rank(networth)     # net-worth percentile, full sample
-)
-
-# ---- Step 6: Analytic sample flag ----
-scf_2022 <- scf_update(scf_2022,
-  in_analytic_sample = as.integer(
-    foreign_born == 1 &
-    !is.na(origin_region) &
-    in_age_range == 1
-  )
-)
-```
-
-```{r build-foreign-born-design}
-# ============================================================================
-# Build the foreign-born subset design — same pattern as scf_debtors in Paper 1
-# ============================================================================
-# We copy the full design and subset each implicate manually, since scf
-# package doesn't expose a built-in subset method.
-
 scf_fb <- scf_2022
-for (i in 1:5) {
-  idx <- scf_2022$mi_design[[i]]$variables$in_analytic_sample == 1
-  idx[is.na(idx)] <- FALSE
-  scf_fb$mi_design[[i]] <- subset(scf_2022$mi_design[[i]], idx)
-}
+
+# Safely subset the survey designs across all implicates using lapply
+scf_fb$mi_design <- lapply(scf_2022$mi_design, function(des) {
+  subset(des, in_analytic_sample == 1)
+})
 
 # Diagnostic: report sample size
 n_fb <- nrow(scf_fb$mi_design[[1]]$variables)
@@ -416,23 +581,32 @@ n_fb <- nrow(scf_fb$mi_design[[1]]$variables)
 ## Foreign-Born Sample Composition
 
 ```{r desc-sample-comp, results='asis'}
-if (n_fb > 0) {
-  fb_imp1 <- scf_fb$mi_design[[1]]$variables
-
-  mean_age   <- weighted.mean(fb_imp1$age, fb_imp1$wgt, na.rm = TRUE)
-  mean_yiu   <- weighted.mean(fb_imp1$years_in_us, fb_imp1$wgt, na.rm = TRUE)
-  mean_inc   <- weighted.mean(fb_imp1$income, fb_imp1$wgt, na.rm = TRUE)
-  median_nw  <- median(fb_imp1$networth, na.rm = TRUE)
-
-  cat(sprintf("The analytic sample comprises %s foreign-born respondents in the 2022 SCF aged 25-75. ",
-              formatC(n_fb, big.mark = ",")))
-  cat(sprintf("Using survey weights, the mean age in this population is %.1f years, with a mean of %.1f years lived in the U.S. ",
-              mean_age, mean_yiu))
-  cat(sprintf("Mean household income is $%s and median net worth is $%s.\n\n",
-              formatC(round(mean_inc), big.mark = ","),
-              formatC(round(median_nw), big.mark = ",")))
+# ---- Step 2: Origin-region recode from X6915 ----
+if (have_X6915) {
+  scf_2022 <- scf_update(scf_2022,
+    origin_region = factor(case_when(
+      # Force to numeric to satisfy strict type-checking
+      as.numeric(X6915) == 500 ~ "Mexican/Latin American",
+      as.numeric(X6915) == 400 ~ "Other Caribbean/West Indies",
+      as.numeric(X6915) %in% c(800, 900, 1000) ~ "Asian",
+      as.numeric(X6915) %in% c(100, 200, 300) ~ "European/Other developed",
+      as.numeric(X6915) %in% c(600, 700, 1100, 1200) ~ "Other",
+      TRUE ~ NA_character_
+    ), levels = c("Mexican/Latin American",
+                  "Other Caribbean/West Indies",
+                  "Asian",
+                  "European/Other developed",
+                  "Other"))
+  )
 } else {
-  cat("**Analytic sample is empty.** The most likely cause is that the X7404 origin-region recode mapping does not match the actual codebook values. Check the X7404 frequency table printed in the diagnostic chunk and update the `case_when` ranges in the variable-engineering chunk.\n\n")
+  scf_2022 <- scf_update(scf_2022,
+    origin_region = factor(NA_character_,
+      levels = c("Mexican/Latin American",
+                 "Other Caribbean/West Indies",
+                 "Asian",
+                 "European/Other developed",
+                 "Other"))
+  )
 }
 ```
 
@@ -572,43 +746,189 @@ compares to Mexican-origin foreign-born respondents.
 
 ```{r h1-model-helper}
 # ============================================================================
-# Helper: fit and tidy an scf_glm or scf_ols model
+# Helper: fit and tidy an scf_glm or scf_ols model (UPDATED FOR NESTED MODELS)
 # ============================================================================
-# Matches the pattern in Paper 1: scf_glm(scf_obj, formula, family) returns
-# an object with $results (a data frame of pooled coefficients).
+library(dplyr)
 
 fit_h1_model <- function(outcome_var, scf_obj, family_type = "binomial") {
 
-  base_rhs <- "origin_region + years_in_us + age_centered + educ_cat + currently_married + log_income"
-  full_formula <- as.formula(paste(outcome_var, "~", base_rhs))
+  # 1. Define the nested specifications
+  baseline_rhs <- "origin_region + yiu_clean + yiu_missing + age_centered"
+  full_rhs     <- "origin_region + yiu_clean + yiu_missing + age_centered + educ_cat + currently_married + log_income"
 
-  fit <- tryCatch({
-    if (family_type == "binomial") {
-      scf_glm(scf_obj, full_formula, family = binomial())
-    } else {
-      scf_ols(scf_obj, full_formula)
+  baseline_formula <- as.formula(paste(outcome_var, "~", baseline_rhs))
+  full_formula     <- as.formula(paste(outcome_var, "~", full_rhs))
+
+  # 2. Internal function to fit, tidy, and label a single specification
+  fit_and_format <- function(form, label) {
+    fit <- tryCatch({
+      if (family_type == "binomial") {
+        scf_glm(scf_obj, form, family = binomial())
+      } else {
+        scf_ols(scf_obj, form)
+      }
+    }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+    if (is.list(fit) && isTRUE(fit$error)) return(NULL)
+
+    res <- fit$results
+    res$Model <- factor(label, levels = c("Baseline (Demographics Only)", "Full (With Human Capital)"))
+
+    # Standardize confidence intervals across GLM and OLS for plotting
+    if (family_type == "binomial" && "estimate" %in% names(res)) {
+      res$odds_ratio <- exp(res$estimate)
+      res$conf_low   <- exp(res$estimate - 1.96 * res$std.error)
+      res$conf_high  <- exp(res$estimate + 1.96 * res$std.error)
+    } else if ("estimate" %in% names(res)) {
+      res$odds_ratio <- NA 
+      res$conf_low   <- res$estimate - 1.96 * res$std.error
+      res$conf_high  <- res$estimate + 1.96 * res$std.error
     }
-  }, error = function(e) {
-    list(error = TRUE, message = conditionMessage(e))
-  })
-
-  if (is.list(fit) && isTRUE(fit$error)) {
-    return(fit)
+    return(res)
   }
 
-  # Extract the pooled results
-  results <- fit$results
+  # 3. Run both models and bind them
+  res_base <- fit_and_format(baseline_formula, "Baseline (Demographics Only)")
+  res_full <- fit_and_format(full_formula, "Full (With Human Capital)")
 
-  # For binomial models, add odds-ratio columns (matches Paper 1 pattern)
-  if (family_type == "binomial" && "estimate" %in% names(results)) {
-    results$odds_ratio <- exp(results$estimate)
-    results$or_lower   <- exp(results$estimate - 1.96 * results$std.error)
-    results$or_upper   <- exp(results$estimate + 1.96 * results$std.error)
+  if (is.null(res_base) && is.null(res_full)) {
+    return(list(error = TRUE, message = "Both specifications failed."))
   }
 
-  results
+  bind_rows(res_base, res_full)
 }
 ```
+
+
+```{r forest-plot-all-regions, fig.height=6, fig.width=9, echo=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# Pull the nested model results for Net Worth Percentile
+res_nw <- fit_h1_model("nw_pctl", scf_fb, "ols")
+
+if (!is.list(res_nw) || !isTRUE(res_nw$error)) {
+  
+  # Filter down to ALL origin region coefficients
+  plot_data <- res_nw %>%
+    filter(grepl("^origin_region", term)) %>%
+    mutate(
+      Region = gsub("origin_region", "", term)
+    )
+  
+  # Sort the y-axis dynamically based on the baseline wealth gap
+  # This makes the chart much cleaner to read
+  baseline_order <- plot_data %>%
+    filter(Model == "Baseline (Demographics Only)") %>%
+    arrange(estimate) %>%
+    pull(Region)
+    
+  plot_data <- plot_data %>%
+    mutate(Region = factor(Region, levels = baseline_order))
+  
+  # Generate the Forest Plot
+  p_all <- ggplot(plot_data, aes(x = estimate, y = Region, color = Model, shape = Model)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_pointrange(aes(xmin = conf_low, xmax = conf_high),
+                    position = position_dodge(width = 0.5), size = 0.8, linewidth = 1) +
+    theme_minimal(base_size = 12) +
+    labs(
+      title = "Origin-Region Effects on Net Worth Percentile",
+      subtitle = "Testing segmented assimilation vs. human capital convergence (Ref: Mexican Origin)",
+      x = "Coefficient Estimate (Difference in Net Worth Percentile)",
+      y = NULL
+    ) +
+    scale_color_manual(values = c("Baseline (Demographics Only)" = "#E69F00", 
+                                  "Full (With Human Capital)" = "#0072B2")) +
+    theme(
+      legend.position = "bottom", 
+      legend.title = element_blank(),
+      plot.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
+    
+  print(p_all)
+} else {
+  cat("Model failed to converge or run properly.")
+}
+```
+
+```{r forest-plots-binary, fig.height=10, fig.width=9, echo=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# 1. Define the binary outcomes to loop through
+binary_outcomes <- list(
+  own_retire    = "Retirement Account (Parallel)",
+  own_stocks    = "Direct Stocks (Parallel)",
+  own_home      = "Homeownership (Selective)",
+  credit_denied = "Credit Denied (Downward)",
+  no_checking   = "Unbanked (Downward)"
+)
+
+# Initialize an empty dataframe to catch all the results
+all_binary_results <- data.frame()
+
+# 2. Run the nested models for each outcome and stack the data
+for (var_name in names(binary_outcomes)) {
+  label <- binary_outcomes[[var_name]]
+  res <- fit_h1_model(var_name, scf_fb, "binomial")
+  
+  if (is.list(res) && !isTRUE(res$error)) {
+    clean_res <- res %>%
+      filter(grepl("^origin_region", term)) %>%
+      mutate(
+        Region = gsub("origin_region", "", term),
+        Outcome = label
+      )
+    all_binary_results <- bind_rows(all_binary_results, clean_res)
+  }
+}
+
+# 3. Sort the Regions for a clean visual (using Homeownership as the anchor)
+if (nrow(all_binary_results) > 0) {
+  baseline_order <- all_binary_results %>%
+    filter(Outcome == "Homeownership (Selective)", Model == "Baseline (Demographics Only)") %>%
+    arrange(odds_ratio) %>%
+    pull(Region)
+  
+  all_binary_results <- all_binary_results %>%
+    mutate(Region = factor(Region, levels = baseline_order))
+  
+  # 4. Generate the Faceted Forest Plot
+  p_binary <- ggplot(all_binary_results, aes(x = odds_ratio, y = Region, color = Model, shape = Model)) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_pointrange(aes(xmin = conf_low, xmax = conf_high),
+                    position = position_dodge(width = 0.5), size = 0.6, linewidth = 0.8) +
+    facet_wrap(~Outcome, scales = "free_x", ncol = 2) +
+    scale_x_log10() + # CRITICAL: Makes Odds Ratios visually symmetric around 1.0
+    theme_minimal(base_size = 11) +
+    labs(
+      title = "Origin-Region Effects on Specific Financial Behaviors",
+      subtitle = "Odds Ratios relative to Mexican Origin (x-axis is log-scaled)",
+      x = "Odds Ratio (1 = No Difference from Mexican Origin)",
+      y = NULL
+    ) +
+    scale_color_manual(values = c("Baseline (Demographics Only)" = "#E69F00", 
+                                  "Full (With Human Capital)" = "#0072B2")) +
+    theme(
+      legend.position = "bottom", 
+      legend.title = element_blank(),
+      plot.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 11),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+  
+  print(p_binary)
+} else {
+  cat("Binary models failed to converge.")
+}
+```
+
+
+
 
 ```{r h1-parallel, results='asis'}
 if (n_fb >= 100) {
@@ -637,14 +957,12 @@ if (n_fb >= 100) {
     }
 
     display <- origin_rows %>%
-      mutate(across(c(estimate, std.error, odds_ratio,
-                      or_lower, or_upper), ~round(., 3)),
+      mutate(across(c(estimate, std.error, odds_ratio, conf_low, conf_high), ~round(., 3)),
              p.value = formatC(p.value, format = "e", digits = 2)) %>%
-      select(term, estimate, std.error, odds_ratio,
-             or_lower, or_upper, p.value)
+      select(Model, term, estimate, std.error, odds_ratio, conf_low, conf_high, p.value)
 
     print(kable(display,
-                col.names = c("Term", "Log-Odds", "SE",
+                col.names = c("Model", "Term", "Log-Odds", "SE",
                               "Odds Ratio", "OR Lower", "OR Upper", "p-value"),
                 caption = sprintf("%s — Mexican origin = reference", info$label)))
     cat("\n\n")
@@ -679,14 +997,12 @@ if (n_fb >= 100) {
     }
 
     display <- origin_rows %>%
-      mutate(across(c(estimate, std.error, odds_ratio,
-                      or_lower, or_upper), ~round(., 3)),
+      mutate(across(c(estimate, std.error, odds_ratio, conf_low, conf_high), ~round(., 3)),
              p.value = formatC(p.value, format = "e", digits = 2)) %>%
-      select(term, estimate, std.error, odds_ratio,
-             or_lower, or_upper, p.value)
+      select(Model, term, estimate, std.error, odds_ratio, conf_low, conf_high, p.value)
 
     print(kable(display,
-                col.names = c("Term", "Log-Odds", "SE",
+                col.names = c("Model", "Term", "Log-Odds", "SE",
                               "Odds Ratio", "OR Lower", "OR Upper", "p-value"),
                 caption = sprintf("%s — Mexican origin = reference", info$label)))
     cat("\n\n")
@@ -708,13 +1024,13 @@ if (n_fb >= 100) {
     origin_rows <- res_home %>% filter(grepl("^origin_region", term))
     if (nrow(origin_rows) > 0) {
       display <- origin_rows %>%
-        mutate(across(c(estimate, std.error, odds_ratio,
-                        or_lower, or_upper), ~round(., 3)),
+        mutate(across(c(estimate, std.error, odds_ratio, conf_low, conf_high), ~round(., 3)),
                p.value = formatC(p.value, format = "e", digits = 2)) %>%
-        select(term, estimate, std.error, odds_ratio,
-               or_lower, or_upper, p.value)
+        select(Model, term, estimate, std.error, odds_ratio, conf_low, conf_high, p.value)
+      
+      # FIX 1: Cleaned up the caption and parentheses
       print(kable(display,
-                  col.names = c("Term", "Log-Odds", "SE",
+                  col.names = c("Model", "Term", "Log-Odds", "SE",
                                 "Odds Ratio", "OR Lower", "OR Upper", "p-value"),
                   caption = "Homeownership — Mexican origin = reference"))
       cat("\n\n")
@@ -732,9 +1048,11 @@ if (n_fb >= 100) {
       display <- origin_rows %>%
         mutate(across(c(estimate, std.error), ~round(., 3)),
                p.value = formatC(p.value, format = "e", digits = 2)) %>%
-        select(term, estimate, std.error, p.value)
+        # FIX 2: Added 'Model' to the select function
+        select(Model, term, estimate, std.error, p.value)
+      
       print(kable(display,
-                  col.names = c("Term", "Estimate", "SE", "p-value"),
+                  col.names = c("Model", "Term", "Estimate", "SE", "p-value"),
                   caption = "Net-Worth Percentile — Mexican origin = reference"))
       cat("\n\n")
     }
@@ -763,11 +1081,11 @@ if (n_fb >= 100) {
     list(var = "nw_pctl",       label = "NW pctile",      family = "ols")
   )
 
-  # Initialize the pattern matrix
-  origin_levels_no_ref <- c("Other Latin American/Caribbean",
-                             "Asian",
-                             "European/Other developed",
-                             "Other")
+  # Initialize the pattern matrix with the correct updated levels
+  origin_levels_no_ref <- c("Other Caribbean/West Indies",
+                            "Asian",
+                            "European/Other developed",
+                            "Other")
 
   pattern_df <- data.frame(`Origin Region` = origin_levels_no_ref,
                            check.names = FALSE,
@@ -781,14 +1099,17 @@ if (n_fb >= 100) {
       next
     }
 
+    # FIX: Isolate the Full model so we only get ONE coefficient per region
+    res_full <- res %>% filter(Model == "Full (With Human Capital)")
+
     cell_values <- sapply(origin_levels_no_ref, function(lvl) {
       term_name <- paste0("origin_region", lvl)
-      idx <- which(res$term == term_name)
+      idx <- which(res_full$term == term_name)
 
       if (length(idx) == 0) return("--")
 
-      est <- res$estimate[idx]
-      pval <- res$p.value[idx]
+      est <- res_full$estimate[idx]
+      pval <- res_full$p.value[idx]
 
       # For binomial: report odds ratio with stars
       # For OLS: report estimate with stars
@@ -810,11 +1131,11 @@ if (n_fb >= 100) {
     pattern_df[[info$label]] <- cell_values
   }
 
-  cat("**Table 3. Origin-region × outcome pattern matrix**\n\n")
+  cat("**Table 3. Origin-region × outcome pattern matrix (Full Model)**\n\n")
   cat("Cells contain odds ratios (binary outcomes) or coefficient estimates ",
       "(net-worth percentile) relative to Mexican origin (reference). ",
       "Stars: \\* p<0.05, \\*\\* p<0.01, \\*\\*\\* p<0.001.\n\n", sep = "")
-  print(kable(pattern_df, caption = "Origin-region effects across outcomes"))
+  print(kable(pattern_df, caption = "Origin-region effects across outcomes (Net of Human Capital)"))
   cat("\n\n")
 }
 ```
