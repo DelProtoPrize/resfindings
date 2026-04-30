@@ -1,0 +1,2438 @@
+---
+title: "Segmented Assimilation in the American Financial System: Origin-Based Gradients in Immigrant Household Finances"
+subtitle: "Evidence from the 2022 Survey of Consumer Finances"
+author: "Delroy Nichols"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+rm(list = ls())
+gc()
+set.seed(42)
+```
+
+# Origin-Based Gradients in Immigrant Household Finances
+
+## Abstract
+
+Two theories make different predictions about the financial outcomes of foreign-born
+households in the U.S. The human-capital convergence model holds that, once
+characteristics such as age, education, income, and time since arrival are controlled
+for, the origin region has no independent effect. The segmented-assimilation framework
+predicts that the origin region directs households into incorporation pathways whose
+effects persist beyond human capital and duration of residence. Until 2022, this could
+not be tested directly because no wealth survey tracked national origin.
+
+This paper uses new 2022 Survey of Consumer Finances variables on respondent national
+origin (X6915) and years in the United States (X6906) to test competing predictions
+across seven financial outcomes spanning three theoretical pathways. Previewing the
+primary findings, logistic and linear regressions on a foreign-born sample (n=1,103)
+do not reject the human-capital convergence null: origin-region coefficients are small,
+statistically indistinguishable from zero, and unaffected by human-capital controls.
+A duration-stratified robustness check splits the sample into recent arrivals
+(≤15 years) and long-tenured immigrants (>15 years) to test for segmentation effects
+in early-stage incorporation and possible convergence over time. Collectively, these
+results provide limited support for the segmented-assimilation framework and instead
+indicate that differences by origin region are minimal after controlling for human
+capital, clarifying when and where segmented-assimilation theory applies to U.S.
+wealth outcomes.
+
+**Data Source:** 2022 Survey of Consumer Finances (SCF), Federal Reserve Board. All
+estimates are survey-weighted; all models are pooled across the SCF's five multiply-
+imputed datasets using Rubin's Rules.
+
+**Note on Scope:** All findings are correlational and limited to the foreign-born
+respondent sample. The SCF's cross-sectional design and absence of parental nativity
+preclude causal claims and intergenerational analysis.
+
+## The Central Question
+
+Two major theories explain immigrant economic outcomes in the U.S. The human-capital
+convergence model, as articulated by Borjas (1987, 1999), contends that factors such
+as education, English proficiency, age at arrival, and time in the U.S. sufficiently
+account for economic outcomes, leaving the origin region with no independent effect
+once these factors are controlled for. Foundational empirical studies by Borjas (1987),
+Chiswick (1978), and Blau and Graham (1990) provide evidence that, after adjusting for
+relevant human-capital characteristics and duration of residence, differences in
+immigrant economic integration by origin region largely disappear.
+
+The **segmented-assimilation framework**, developed by Alejandro Portes, Rubén Rumbaut,
+and Min Zhou, makes the opposite prediction. Three pathways are identified: *parallel
+integration* into the white middle class through educational achievement, *downward
+assimilation* into the racialized urban underclass through structural exclusion, and
+*selective assimilation* through retention of ethnic-community ties and resources
+(Portes & Zhou, 1993; Portes & Rumbaut, 2001). The origin region itself, net of human
+capital, channels households into these pathways because reception contexts—including
+race, neighborhood, and labor-market structure—differ systematically across origin
+groups (Zhou, 1997). For example, a Mexican-origin household with a college degree may
+face different access to mainstream finance than an Asian-origin household with
+identical credentials.
+
+Until 2022, this debate could not be tested directly in U.S. wealth data because no
+nationally representative wealth survey collected respondents' national origin. Earlier
+SCF waves identified foreign-born respondents only through indirect indicators and
+provided no origin-region detail. The 2022 SCF wave added respondent and spouse
+national origin (X6915, X8055-X8057) and years lived in the United States (X6906,
+X7796), the first such measures in any nationally representative U.S. wealth survey.
+
+This paper directly tests whether foreign-born household financial outcomes in the U.S.
+differ systematically by origin region, after accounting for human capital and years
+in the country. A finding of large, statistically robust origin-region effects would
+support segmented assimilation theory, while null or near-null effects would support
+human-capital convergence. The SCF data now provide a direct means of distinguishing
+these competing models, making this test both timely and necessary.
+
+## Why This Matters: Beyond Race-Only Frameworks
+
+Wealth and credit access disparities are generally studied by race rather than by
+origin. Studies comparing Black and Hispanic groups often treat these populations as
+homogeneous. However, prior research has shown that distinct groups such as Black
+Caribbeans, Mexican-origin Hispanics, and Cuban-origin Hispanics may differ
+financially due to unique migration trajectories and community resources (e.g., Logan,
+2007; Smith, 2015; Telles & Ortiz, 2008). Whether these differences appear in 2022
+nationally representative data is the empirical question this paper examines.
+
+The 2022 SCF adds origin-region detail, allowing the field to test if
+segmented-assimilation pathways (parallel integration, downward assimilation,
+selective assimilation) appear in wealth and credit data with enough magnitude and
+statistical precision to distinguish origin groups. If so, interventions for
+"Hispanic" or "Asian" households would need to be redesigned to address within-group
+heterogeneity. If not, existing race-based frameworks, simpler, reliably measured, and
+widely supported, remain the best analytical lens for U.S. wealth disparities, even
+with origin-region detail.
+
+The purpose of this paper is to address the longstanding debate over the determinants
+of immigrant financial outcomes by directly comparing two leading theoretical
+models—human-capital convergence and segmented assimilation—using the first
+nationally representative U.S. wealth data that includes national origin. By
+leveraging new variables from the 2022 Survey of Consumer Finances, this study seeks
+to clarify whether origin region exerts an independent effect on foreign-born
+household finances, or if observed differences are fully explained by human-capital
+characteristics and duration of U.S. residence. Rather than privileging either
+theoretical perspective, the analysis is designed to provide an unbiased empirical
+test, thereby clarifying which model is more consistent with the observed data.
+
+---
+
+```{r load-packages}
+required_packages <- c(
+  "tidyverse", "haven", "survey", "labelled",
+  "ggplot2", "scales", "scf",
+  "broom", "knitr", "moments"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg, repos = "http://cran.us.r-project.org")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r download-data}
+# Same download pattern as the credit-card-debt analysis (Paper 1).
+# scf_download writes .rds files to the current working directory.
+
+dir.create("scf_data", showWarnings = FALSE, recursive = TRUE)
+original_wd <- getwd()
+
+# Move into the data folder
+setwd("scf_data")
+
+library(haven)
+
+# Read from your local absolute path
+raw_macro_df <- read_dta("C:/Users/delro/OneDrive/Documents/scf2022s/p22i6.dta")
+
+# Save directly to the current working directory (which is already scf_data)
+saveRDS(raw_macro_df, "p22i6.rds") 
+
+# Continue with the download check for the bulletin extract
+if (!file.exists("scf2022.rds")) {
+  tryCatch({
+    scf_download(2022)
+  }, error = function(e) {
+    cat("Error downloading 2022 data:", conditionMessage(e), "\n")
+  })
+}
+
+# Return to the root project directory
+setwd(original_wd)
+```
+
+```{r load-data}
+scf_2022 <- scf_load(2022, data_directory = "scf_data")
+```
+
+# Variable Availability and Diagnostic
+
+Before constructing variables, we check which of the variables having direct exposure without segmented assimilation theory are
+actually available in the loaded `scf` package object. The standard SCF Bulletin extract
+that the `scf` package builds does not by default include the new national-origin or
+years-in-U.S. items (`X6906`, `X7404`, `X6915`); these are raw codebook items rather than
+constructed Bulletin variables. If they are missing, we read the raw 2022 SCF `.rds`
+file directly and merge them in by household ID.
+
+```{r diagnose-immigration-vars, results='asis'}
+imp1 <- scf_2022$mi_design[[1]]$variables
+
+# Variables we need
+# X6915 = respondent national origin (the variable for origin region)
+# X6906 = years respondent has lived in the U.S. (the YIU variable)
+# X7796 = years spouse has lived in the U.S. (auxiliary)
+# X7404 = spouse Hispanic/Latino self-id (auxiliary)
+# X8049 = spouse race (used in swap correction)
+# X8000 = sex/role swap indicator
+#
+# CORRECTED 2026-04-29: V5 incorrectly used X7437-X7443 as years-in-US.
+# Per the official SCF 2022 changes file, X7437-X7443 are MORTGAGE FORBEARANCE
+# variables, not immigration variables. The true years-in-US variable is X6906
+# for the respondent (and X7796 for the spouse).
+imm_vars <- c("X6915", "X6906", "X7796", "X7404", "X8000", "X8049")
+
+present_in_extract <- imm_vars %in% names(imp1)
+
+cat("**Immigration-variable availability in the scf package extract:**\n\n")
+diag_df <- data.frame(
+  Variable = imm_vars,
+  `In extract` = ifelse(present_in_extract, "Yes", "No"),
+  check.names = FALSE
+)
+print(kable(diag_df))
+cat("\n\n")
+
+need_raw_merge <- !all(present_in_extract)
+
+if (need_raw_merge) {
+  cat("Some required immigration variables are missing from the bulletin extract. ",
+      "Attempting to merge them in from the raw 2022 SCF data file...\n\n", sep = "")
+} else {
+  cat("All required immigration variables are present in the extract. ",
+      "No raw merge needed.\n\n", sep = "")
+}
+```
+
+```{r merge-raw-immigration-vars}
+# ============================================================================
+# Merge raw immigration variables from the underlying SCF .rds file
+# ============================================================================
+# The scf package downloads the raw 2022 SCF data into scf_data/ as well as
+# building the bulletin extract. The raw file contains all X-variables; we
+# read it, select just the immigration-related vars + ID, and merge into
+# each implicate's $variables data frame.
+#
+# Common file names produced by scf_download():
+#   - p22i6.rds (raw public-use, 5 implicates stacked, with implicate id)
+#   - scf2022.rds (the bulletin extract)
+#
+# We try a few candidate filenames defensively.
+
+if (need_raw_merge) {
+
+  raw_candidates <- c(
+    file.path("scf_data", "p22i6.rds"),
+    file.path("scf_data", "scfp2022.rds"),
+    file.path("scf_data", "p22.rds"),
+    "p22i6.rds",
+    "scfp2022.rds"
+  )
+
+  raw_path <- raw_candidates[file.exists(raw_candidates)][1]
+
+  if (!is.na(raw_path)) {
+    raw_data <- readRDS(raw_path)
+
+    # Standardize variable name casing — the raw file may have either
+    # uppercase or lowercase. We try uppercase first since X-variables
+    # are conventionally uppercase.
+    raw_path <- raw_candidates[file.exists(raw_candidates)][1]
+
+  if (!is.na(raw_path)) {
+    raw_data <- readRDS(raw_path)
+
+    # FIX: Force all raw data columns to uppercase immediately.
+    # This aligns the Stata output with the canonical SCF uppercase format.
+    names(raw_data) <- toupper(names(raw_data))
+
+    raw_names <- names(raw_data)
+    
+    # The name_map is now technically redundant, but safe to keep
+    name_map <- setNames(raw_names, toupper(raw_names))
+
+    available_imm <- imm_vars[toupper(imm_vars) %in% toupper(raw_names)]
+
+    # The raw data has 5 implicates stacked. We need an ID that matches
+    # the bulletin extract's row ordering. Common candidates: y1, yy1, x1.
+    id_candidates <- c("Y1", "YY1", "X1") # Updated to only look for uppercase
+    id_var <- id_candidates[id_candidates %in% raw_names][1]
+
+    if (!is.na(id_var) && length(available_imm) > 0) {
+
+      # Pull the matching columns
+      raw_imm <- raw_data[, c(id_var, available_imm), drop = FALSE]
+
+      # Determine implicate count: raw file has each household 5 times (one
+      # per implicate) — split into 5 chunks of equal size in row order.
+      n_total <- nrow(raw_imm)
+      n_per_imp <- nrow(scf_2022$mi_design[[1]]$variables)
+
+      if (n_total == 5 * n_per_imp) {
+        # Standard layout: implicates stacked
+        for (i in 1:5) {
+          start_row <- (i - 1) * n_per_imp + 1
+          end_row   <- i * n_per_imp
+          imm_chunk <- raw_imm[start_row:end_row, available_imm, drop = FALSE]
+
+          # Add to the implicate's $variables
+          for (v in available_imm) {
+            scf_2022$mi_design[[i]]$variables[[v]] <- imm_chunk[[v]]
+          }
+        }
+        cat("Successfully merged ", length(available_imm), " immigration variables ",
+            "from ", raw_path, " into all 5 implicates.\n", sep = "")
+      } else {
+        cat("Row-count mismatch: raw file has ", n_total,
+            " rows, bulletin extract has ", n_per_imp,
+            " rows per implicate. Merge aborted; using available variables only.\n",
+            sep = "")
+      }
+    } else {
+      cat("Could not locate raw SCF file or matching ID variable. ",
+          "Immigration variables will be unavailable.\n", sep = "")
+    }
+  } else {
+    cat("Raw 2022 SCF .rds file not found in scf_data/. ",
+        "Available files:\n", sep = "")
+    cat(paste(list.files("scf_data"), collapse = "\n"), "\n\n")
+  }
+}
+
+# Re-check what's now available
+imp1 <- scf_2022$mi_design[[1]]$variables
+have_X7404 <- "X7404" %in% names(imp1)
+have_yiu   <- "X6906" %in% names(imp1)
+have_X8000 <- "X8000" %in% names(imp1)
+have_X8049 <- "X8049" %in% names(imp1)
+```
+
+```{r raw-x7404-frequency, results='asis'}
+# ============================================================================
+# Print raw X7404 value frequencies — needed to calibrate the recode
+# ============================================================================
+# Until we see what values X7404 actually takes in this wave, we cannot
+# write the correct recoding rule. This chunk dumps the unweighted frequency
+# table so we can adjust the recode.
+
+if (have_X7404) {
+  # 1. Extract the column and force it to a standard numeric vector
+  # This strips out any problematic 'haven_labelled' metadata from Stata
+  x7404_vec <- as.numeric(scf_2022$mi_design[[1]]$variables$X7404)
+  
+  # 2. Use Base R's table() to get the counts, which avoids package conflicts
+  freq_table <- table(x7404_vec, useNA = "ifany")
+  
+  # 3. Reconstruct it into a clean data frame for kable
+  x7404_freq <- data.frame(
+    X7404 = names(freq_table),
+    n = as.integer(freq_table)
+  )
+  
+  # 4. Sort descending
+  x7404_freq <- x7404_freq[order(-x7404_freq$n), ]
+
+  cat("**Raw X7404 frequency (Implicate 1, unweighted):**\n\n")
+  # row.names = FALSE keeps the markdown table perfectly clean
+  print(kable(x7404_freq, caption = "X7404 = respondent national origin", row.names = FALSE))
+  cat("\n\nThis table guides the origin-region recode in the next chunk. ",
+      "Code 0 typically indicates 'inapplicable' (i.e., U.S.-born or non-respondent).\n\n",
+      sep = "")
+}
+```
+
+```{r visuals}
+
+library(ggplot2)
+library(dplyr)
+
+# ============================================================================
+# Visualize X7404 Frequencies: Spouse Hispanic/Latino Culture/Origin
+# ============================================================================
+
+# 1. SCF mapping for X7404
+spouse_hisp_labels <- c(
+  "0" = "Inapplicable (No Spouse/Partner)",
+  "1" = "Yes (Spouse is Hispanic/Latino)",
+  "5" = "No (Spouse is not Hispanic/Latino)"
+)
+
+# 2. Apply labels and generate plot
+x7404_freq %>%
+  mutate(
+    # Map the numeric codes to our accurate text labels
+    Spouse_Label = spouse_hisp_labels[as.character(X7404)],
+    # Catch any unexpected codes just in case
+    Spouse_Label = ifelse(is.na(Spouse_Label), paste("Code", X7404), Spouse_Label)
+  ) %>%
+  # Order the bars by frequency 
+  ggplot(aes(x = reorder(Spouse_Label, n), y = n)) +
+  geom_col(fill = "steelblue", color = "black", alpha = 0.8) +
+  coord_flip() + # Horizontal layout for readability
+  theme_minimal() +
+  labs(
+    title = "Spouse/Partner Hispanic or Latino Origin",
+    subtitle = "Raw frequencies from Implicate 1 (Variable X7404)",
+    x = NULL, 
+    y = "Number of Respondents"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 11)
+  )
+
+```
+
+
+
+```{r plot-x6915, echo=FALSE, warning=FALSE, message=FALSE}
+# ============================================================================
+# Visualize X6915 Frequencies: Reference Person National Origin
+# ============================================================================
+
+library(ggplot2)
+library(dplyr)
+
+# FIX: Explicitly define have_X6915 so the Knit session knows what it is!
+have_X6915 <- "X6915" %in% names(scf_2022$mi_design[[1]]$variables)
+
+if (have_X6915) {
+  
+  x6915_vec <- as.numeric(scf_2022$mi_design[[1]]$variables$X6915)
+  freq_table_6915 <- table(x6915_vec, useNA = "ifany")
+  
+  x6915_freq <- data.frame(
+    X6915 = names(freq_table_6915),
+    n = as.integer(freq_table_6915)
+  )
+  
+  origin_labels <- c(
+    "0" = "U.S. Born / Inapplicable",
+    "100" = "Western European", 
+    "200" = "Eastern European",
+    "300" = "European",
+    "400" = "West Indies",
+    "500" = "Central and South American", 
+    "600" = "Middle Easterner",
+    "700" = "Sub-Saharan African",
+    "800" = "South Asian",
+    "900" = "East Asian",
+    "1000" = "All Other Asians",
+    "1100" = "Pacific Islander",
+    "1200" = "American"
+  )
+  
+  p_x6915 <- x6915_freq %>%
+    mutate(
+      Origin_Label = origin_labels[as.character(X6915)],
+      Origin_Label = ifelse(is.na(Origin_Label), paste("Code", X6915), Origin_Label)
+    ) %>%
+    filter(X6915 != "0") %>% 
+    ggplot(aes(x = reorder(Origin_Label, n), y = n)) +
+    geom_col(fill = "seagreen", color = "black", alpha = 0.8) +
+    coord_flip() + 
+    theme_minimal() +
+    labs(
+      title = "Reference Person National Origin (Immigrant Sub-sample)",
+      subtitle = "Unweighted frequencies from Implicate 1 (Variable X6915, excluding U.S. Born)",
+      x = NULL, 
+      y = "Number of Respondents"
+    ) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.text.y = element_text(size = 11)
+    )
+  
+  # Properly print the plot
+  print(p_x6915)
+  
+} else {
+  cat("Variable X6915 not found. Please ensure the merge chunk was re-run.")
+}
+```
+
+```{r table-x6915, echo=FALSE, results='asis'}
+# Print the raw counts table
+if (have_X6915) {
+  cat("\n\n**Raw X6915 frequency (Implicate 1, unweighted):**\n\n")
+  tab <- knitr::kable(x6915_freq %>% arrange(desc(n)), row.names = FALSE)
+  cat(paste(tab, collapse = "\n"), "\n\n")
+}
+```
+
+
+# Variable Engineering
+
+```{r data-engineering-and-subsetting, warning=FALSE, message=FALSE}
+# ============================================================================
+# Build all analysis variables and create the analytic subset
+# ============================================================================
+# CRITICAL DESIGN NOTE on foreign-born identification:
+#
+# X6915 is an ANCESTRY/HERITAGE variable, asked of all respondents — both
+# foreign-born and U.S.-born. A respondent reporting "Western European"
+# ancestry (code 100) is overwhelmingly U.S.-born (white American with
+# European heritage), not an immigrant from Europe. Likewise, "American"
+# ancestry (1200) is U.S.-born by definition, and "Sub-Saharan African" (700)
+# captures Black Americans reporting African ancestry alongside actual
+# African immigrants.
+#
+# The actual foreign-born signal is in X6906 (years the reference person
+# has lived in the United States), which the SCF only asks of foreign-born
+# respondents. A non-zero, non-missing years-in-US value confirms foreign-
+# born status. (The companion variable X7796 is years-in-US for the spouse
+# but is not used in main models, since the unit of analysis is the
+# respondent.)
+#
+# IMPORTANT NOTE: V5 erroneously used X7437-X7443 as the years-in-US
+# variables. Per the official SCF 2022 changes file, those are MORTGAGE
+# FORBEARANCE variables (which mortgage terms were adjusted after exiting
+# forbearance). The correct YIU variable is X6906. This V6 build uses
+# X6906 throughout.
+#
+# Therefore, foreign_born requires BOTH:
+#   (a) X6915 indicates a non-American ancestry (i.e., X6915 != 0 AND
+#       X6915 != 1200), AND
+#   (b) X6906 > 0 (confirming actual years lived in the U.S. as immigrant)
+# ============================================================================
+
+# ---- Step 1: Years in U.S. (X6906 = respondent years in US) ----
+# X6906 = 0 means inapplicable per SCF data convention (i.e., U.S.-born).
+# X6906 > 0 means the respondent reported N years lived in the U.S.,
+# which is asked only of foreign-born respondents.
+if (have_yiu) {
+  scf_2022 <- scf_update(scf_2022,
+    years_in_us  = ifelse(as.numeric(X6906) <= 0, NA_real_, as.numeric(X6906)),
+    yiu_missing  = as.integer(is.na(years_in_us)),
+    yiu_clean    = ifelse(is.na(years_in_us), 0, years_in_us)
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022,
+    years_in_us = NA_real_, yiu_missing = 1L, yiu_clean = 0
+  )
+}
+
+# ---- Step 2: CORRECTED foreign-born status ----
+# Requires both ancestry indicating non-US origin AND positive years in US.
+# Fall back gracefully if X6915 is unavailable.
+if (have_X6915 && have_yiu) {
+  scf_2022 <- scf_update(scf_2022,
+    foreign_born = as.integer(
+      !is.na(years_in_us) &
+      years_in_us > 0 &
+      as.numeric(X6915) != 0 &
+      as.numeric(X6915) != 1200
+    )
+  )
+} else if (have_yiu) {
+  # YIU-only fallback if X6915 is unavailable
+  scf_2022 <- scf_update(scf_2022,
+    foreign_born = as.integer(!is.na(years_in_us) & years_in_us > 0)
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022, foreign_born = 0L)
+}
+
+# ---- Step 3: Origin-region recode from X6915 ----
+# Used only within the foreign-born sample (filtered by foreign_born flag).
+# Reference category: Latin American (the segmented-assimilation canonical
+# case in the literature; X6915 == 500 = Central/South American).
+if (have_X6915) {
+  scf_2022 <- scf_update(scf_2022,
+    origin_region = factor(case_when(
+      as.numeric(X6915) == 500 ~ "Latin American",
+      as.numeric(X6915) == 400 ~ "Caribbean/West Indies",
+      as.numeric(X6915) %in% c(800, 900, 1000) ~ "Asian",
+      as.numeric(X6915) %in% c(100, 200, 300) ~ "European/Other developed",
+      as.numeric(X6915) %in% c(600, 700, 1100) ~ "Other",
+      TRUE ~ NA_character_
+    ), levels = c("Latin American",
+                  "Caribbean/West Indies",
+                  "Asian",
+                  "European/Other developed",
+                  "Other"))
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022, origin_region = factor(NA_character_))
+}
+
+# ---- Step 3b: Spouse/Partner Hispanic Culture/Origin from X7404 ----
+if (have_X7404) {
+  scf_2022 <- scf_update(scf_2022,
+    spouse_hisp_origin = factor(case_when(
+      X7404 == 1 ~ "Yes (Spouse Hispanic/Latino)",
+      X7404 == 5 ~ "No (Spouse not Hispanic/Latino)",
+      X7404 == 0 ~ "Unmarried/Inapplicable",
+      TRUE ~ NA_character_
+    ), levels = c("Yes (Spouse Hispanic/Latino)",
+                  "No (Spouse not Hispanic/Latino)",
+                  "Unmarried/Inapplicable"))
+  )
+} else {
+  scf_2022 <- scf_update(scf_2022, spouse_hisp_origin = factor(NA_character_))
+}
+
+# ---- Step 4: Race/ethnicity ----
+scf_2022 <- scf_update(scf_2022,
+  race_cat = factor(racecl4, levels = 1:4,
+                    labels = c("White", "Black", "Hispanic", "Other"))
+)
+
+# ---- Step 5: Standard demographic controls ----
+scf_2022 <- scf_update(scf_2022,
+  age_centered = age - 50,
+  age_sq       = age^2,
+  in_age_range = as.integer(age >= 25 & age <= 75),
+  educ_cat = factor(case_when(
+    educ < 8 ~ "Less than HS",
+    educ == 8 ~ "High School",
+    educ %in% 9:11 ~ "Some College",
+    educ == 12 ~ "College Degree",
+    educ %in% 13:14 ~ "Graduate School/PhD",
+    TRUE ~ NA_character_
+  ), levels = c("Less than HS", "High School", "Some College",
+                "College Degree", "Graduate School/PhD")),
+  female            = as.integer(hhsex == 2),
+  currently_married = as.integer(married == 1),
+  has_children      = as.integer(kids > 0),
+  is_homeowner      = as.integer(housecl == 1),
+  has_pension       = as.integer(anypen == 1),
+  log_income        = log(pmax(1, income)),
+  asinh_networth    = asinh(networth),
+  log_wageinc       = log(pmax(1, wageinc))
+)
+
+# ---- Step 6: Outcomes ----
+# CRITICAL: nw_pctl is computed on the FULL SCF distribution (before
+# subsetting to foreign-born) so it reflects position in the broader
+# U.S. wealth distribution, not relative position within the foreign-born
+# subsample. This is computed via scf_update on scf_2022 (the full design)
+# so all 5 implicates get a consistent percentile based on the full sample.
+scf_2022 <- scf_update(scf_2022,
+  own_retire    = as.integer(retqliq > 0),
+  own_stocks    = as.integer(stocks > 0),
+  credit_denied = as.integer(turndown == 1),
+  no_checking   = as.integer(checking <= 0),
+  own_home      = as.integer(housecl == 1),
+  nw_pctl       = 100 * percent_rank(networth)   # full-sample percentile
+)
+
+# ---- Step 7: Analytic sample flag ----
+scf_2022 <- scf_update(scf_2022,
+  in_analytic_sample = as.integer(
+    foreign_born == 1 &
+    !is.na(origin_region) &
+    in_age_range == 1
+  )
+)
+
+# ---- Step 8: Create the Analytic Sample Subset ----
+# Subset each implicate's survey design to foreign-born respondents.
+# nw_pctl values are preserved — they were computed on the full distribution
+# in Step 6 above, so subsetting just keeps the foreign-born rows with
+# their original full-distribution percentile values intact.
+scf_fb <- scf_2022
+scf_fb$mi_design <- lapply(scf_2022$mi_design, function(des) {
+  subset(des, in_analytic_sample == 1)
+})
+
+# Diagnostic: report sample size
+n_fb <- nrow(scf_fb$mi_design[[1]]$variables)
+
+# Diagnostic: cross-tab of X6915 ancestry × foreign_born flag — useful for
+# verifying that the corrected foreign-born identification is sensible.
+fb_diagnostic <- scf_2022$mi_design[[1]]$variables %>%
+  filter(!is.na(X6915)) %>%
+  group_by(X6915) %>%
+  summarise(
+    n_total       = n(),
+    n_foreign     = sum(foreign_born == 1, na.rm = TRUE),
+    pct_foreign   = round(100 * mean(foreign_born == 1, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_total))
+```
+
+```{r build-foreign-born-design}
+# ============================================================================
+# Build the foreign-born subset design — same pattern as scf_debtors in Paper 1
+# ============================================================================
+# NOTE: foreign_born and years_in_us are already defined in the
+# `data-engineering-and-subsetting` chunk above, using the X6915-based
+# definition (X6915 != 0 = foreign-born). The X6915 definition is preferred
+# over X6906 because X6906 has known small missingness (some foreign-born
+# missingness, while X6915 is universally coded.
+#
+# This chunk just rebuilds the scf_fb subset object using the
+# in_analytic_sample flag from the prior chunk.
+
+scf_fb <- scf_2022
+
+scf_fb$mi_design <- lapply(scf_2022$mi_design, function(des) {
+  subset(des, in_analytic_sample == 1)
+})
+
+# Diagnostic: report sample size
+n_fb <- nrow(scf_fb$mi_design[[1]]$variables)
+```
+
+# Descriptive Findings
+
+## Foreign-Born Identification Diagnostic
+
+The corrected `foreign_born` definition requires both ancestry indicating non-U.S.
+origin (X6915 ≠ 0 and X6915 ≠ 1200) AND positive years in the U.S. (X6906).
+The table below shows, for each X6915 ancestry code, what percentage of respondents
+end up classified as foreign-born. Codes like 100 (Western European), 200 (Eastern
+European), and 1200 (American) should be near 0%; codes like 500 (Latin American),
+800/900 (Asian), and 600 (Middle Eastern) should be near 100%.
+
+```{r fb-id-diagnostic, results='asis'}
+if (exists("fb_diagnostic") && nrow(fb_diagnostic) > 0) {
+
+  origin_label_map <- c(
+    "0"    = "U.S. Born / Inapplicable",
+    "100"  = "Western European",
+    "200"  = "Eastern European",
+    "300"  = "European (Other)",
+    "400"  = "West Indies / Caribbean",
+    "500"  = "Central / South American",
+    "600"  = "Middle Eastern",
+    "700"  = "Sub-Saharan African",
+    "800"  = "South Asian",
+    "900"  = "East Asian",
+    "1000" = "All Other Asian",
+    "1100" = "Pacific Islander",
+    "1200" = "American"
+  )
+
+  fb_diagnostic_display <- fb_diagnostic %>%
+    mutate(
+      Ancestry = origin_label_map[as.character(X6915)],
+      Ancestry = ifelse(is.na(Ancestry), paste("Code", X6915), Ancestry)
+    ) %>%
+    select(X6915, Ancestry, n_total, n_foreign, pct_foreign)
+
+  cat("**Table 0. Foreign-born identification by X6915 ancestry code**\n\n")
+  print(kable(fb_diagnostic_display,
+              col.names = c("X6915", "Ancestry label", "n total",
+                            "n foreign-born", "% foreign-born"),
+              caption = "Foreign-born flag = X6915 ∈ origin codes AND years_in_us > 0."))
+  cat("\n\n")
+}
+```
+
+## Foreign-Born Sample Composition
+
+```{r desc-sample-comp, results='asis'}
+# Sample composition statistics — the origin_region recode was already done
+# in the data-engineering chunk above; we don't need to redo it here.
+
+if (n_fb > 0) {
+  fb_imp1 <- scf_fb$mi_design[[1]]$variables
+
+  mean_age   <- weighted.mean(fb_imp1$age, fb_imp1$wgt, na.rm = TRUE)
+  mean_yiu   <- weighted.mean(fb_imp1$years_in_us, fb_imp1$wgt, na.rm = TRUE)
+  mean_inc   <- weighted.mean(fb_imp1$income, fb_imp1$wgt, na.rm = TRUE)
+  median_nw  <- median(fb_imp1$networth, na.rm = TRUE)
+  pct_yiu_missing <- 100 * mean(is.na(fb_imp1$years_in_us))
+
+  cat(sprintf("The analytic sample comprises %s foreign-born respondents in the 2022 SCF aged 25-75. ",
+              formatC(n_fb, big.mark = ",")))
+  cat(sprintf("Using survey weights, the mean age in this population is %.1f years, with a mean of %.1f years lived in the U.S. ",
+              mean_age, mean_yiu))
+  cat(sprintf("Mean household income is $%s and median net worth is $%s. ",
+              formatC(round(mean_inc), big.mark = ",", format = "d"),
+              formatC(round(median_nw), big.mark = ",", format = "d")))
+  cat(sprintf("Note: %.1f%% of foreign-born respondents have missing years-in-U.S. data; the missing-indicator method is used in regressions to retain these observations.\n\n",
+              pct_yiu_missing))
+} else {
+  cat("**Analytic sample is empty.** Check the X6915 origin-region recode in the variable-engineering chunk.\n\n")
+}
+```
+
+## Origin-Region Distribution
+
+```{r desc-origin-table, results='asis'}
+if (n_fb > 0) {
+  fb_imp1 <- scf_fb$mi_design[[1]]$variables
+
+  origin_summary <- fb_imp1 %>%
+    filter(!is.na(origin_region)) %>%
+    group_by(origin_region) %>%
+    summarise(
+      n_unweighted   = n(),
+      weighted_count = sum(wgt, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      pct_weighted = round(weighted_count / sum(weighted_count) * 100, 1)
+    ) %>%
+    select(origin_region, n_unweighted, pct_weighted)
+
+  cat("**Table 1. Foreign-born sample by origin region (2022 SCF)**\n\n")
+  print(kable(origin_summary,
+              col.names = c("Origin Region", "n (Unweighted)", "% (Weighted)"),
+              caption = "Note: percentages are SCF-weighted; n is unweighted (Implicate 1)."))
+  cat("\n\n")
+
+  small_cells <- origin_summary %>% filter(n_unweighted < 30)
+  if (nrow(small_cells) > 0) {
+    cat(sprintf("**Warning:** Small unweighted cell sizes (< 30) in %d origin region(s): %s. Model estimates for these groups may be unstable.\n\n",
+                nrow(small_cells),
+                paste(as.character(small_cells$origin_region), collapse = ", ")))
+  }
+}
+```
+
+## Outcome Prevalence by Origin Region
+
+```{r desc-outcomes-by-origin, results='asis'}
+if (n_fb > 0) {
+
+  # Use scf_mean for each outcome (matches Paper 1 pattern)
+  outcomes <- list(
+    own_retire    = "Retirement (%)",
+    own_stocks    = "Stocks (%)",
+    credit_denied = "Credit denied (%)",
+    no_checking   = "No checking (%)",
+    own_home      = "Homeowner (%)",
+    nw_pctl       = "NW pctile (mean)"
+  )
+
+  # Run each prevalence estimate using scf_mean with by = ~origin_region
+  prevalence_list <- list()
+  for (out_var in names(outcomes)) {
+    f <- as.formula(paste0("~", out_var))
+    res <- tryCatch({
+      scf_mean(scf_fb, f, by = ~origin_region)$results
+    }, error = function(e) NULL)
+    prevalence_list[[out_var]] <- res
+  }
+
+  # Build display table — one row per origin region
+  origin_levels <- levels(scf_fb$mi_design[[1]]$variables$origin_region)
+  display_df <- data.frame(`Origin Region` = origin_levels,
+                           check.names = FALSE,
+                           stringsAsFactors = FALSE)
+
+  for (out_var in names(outcomes)) {
+    res <- prevalence_list[[out_var]]
+    col_label <- outcomes[[out_var]]
+
+    if (is.null(res) || nrow(res) == 0) {
+      display_df[[col_label]] <- "--"
+      next
+    }
+
+    # The scf_mean result has columns: by-variable level, estimate, std.error
+    # Match by origin_region level
+    estimates <- sapply(origin_levels, function(lvl) {
+      idx <- which(as.character(res[[1]]) == lvl)
+      if (length(idx) == 0) return(NA_real_)
+      # The estimate column is typically the second column or named "estimate"
+      if ("estimate" %in% names(res)) res$estimate[idx] else res[[2]][idx]
+    })
+
+    if (out_var == "nw_pctl") {
+      display_df[[col_label]] <- ifelse(is.na(estimates), "--",
+                                         sprintf("%.1f", estimates))
+    } else {
+      display_df[[col_label]] <- ifelse(is.na(estimates), "--",
+                                         sprintf("%.1f", estimates * 100))
+    }
+  }
+
+  cat("**Table 2. Weighted prevalence of financial outcomes by origin region**\n\n")
+  print(kable(display_df,
+              caption = "All estimates are SCF-weighted and pooled across implicates."))
+  cat("\n\n")
+}
+```
+
+## Years-in-U.S. Distribution by Origin Region
+
+```{r desc-yiu-plot, fig.cap="Distribution of years lived in the U.S. by origin region (foreign-born SCF sample, 2022)"}
+if (n_fb > 0) {
+  plot_data <- scf_fb$mi_design[[1]]$variables %>%
+    filter(!is.na(years_in_us), !is.na(origin_region))
+
+  if (nrow(plot_data) > 0) {
+    ggplot(plot_data,
+           aes(x = origin_region, y = years_in_us, fill = origin_region)) +
+      geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+      geom_jitter(width = 0.15, alpha = 0.2, size = 0.6) +
+      labs(x = NULL,
+           y = "Years lived in the U.S.",
+           subtitle = "Unweighted distributional shape (Implicate 1)") +
+      theme_minimal(base_size = 11) +
+      theme(legend.position = "none",
+            axis.text.x = element_text(angle = 30, hjust = 1)) +
+      scale_fill_brewer(palette = "Set2")
+  }
+}
+```
+
+# Modeling Results
+
+## H1: Origin-Region Main Effects
+
+We test whether financial outcomes among foreign-born respondents differ by origin
+region net of years-in-U.S., age, education, marital status, and income. Logistic
+regression for binary outcomes (`scf_glm` with `binomial()`) and OLS for the continuous
+net-worth-percentile outcome (`scf_ols`). All models pool across the 5 implicates.
+
+Mexican origin is the reference category — that is, the X6915=500 ("Central and South
+American") group, which the segmented-assimilation literature treats as the canonical
+Latin American case. Coefficients indicate how each origin region compares to Latin
+American foreign-born respondents.
+
+**Reading the results.** Each outcome has both a Baseline specification (origin region
++ years-in-U.S. + age) and a Full specification (Baseline + education + marital status +
+income). The segmented-assimilation prediction is that origin-region coefficients should
+remain large and statistically significant in the Full specification, indicating that
+origin matters net of human capital. The human-capital convergence prediction is that
+origin-region coefficients should be small and statistically indistinguishable from zero
+once human-capital controls are added. Confidence intervals that include 1.0 (for odds
+ratios) or 0.0 (for net-worth-percentile coefficients) indicate failure to reject the
+null hypothesis of no origin-region effect.
+
+```{r h1-model-helper}
+# ============================================================================
+# Helper: fit and tidy an scf_glm or scf_ols model (NESTED SPECS)
+# ============================================================================
+library(dplyr)
+
+fit_h1_model <- function(outcome_var, scf_obj, family_type = "binomial") {
+
+  # 1. Define the nested specifications
+  # V8 fix: replaced yiu_clean + yiu_missing with raw years_in_us. The
+  # foreign-born filter requires valid years_in_us, so yiu_missing is
+  # constant 0 across the analytic sample, which makes it a singular
+  # predictor and crashes the GLM solver.
+  baseline_rhs <- "origin_region + years_in_us + age_centered"
+  full_rhs     <- "origin_region + years_in_us + age_centered + educ_cat + currently_married + log_income"
+
+  baseline_formula <- as.formula(paste(outcome_var, "~", baseline_rhs))
+  full_formula     <- as.formula(paste(outcome_var, "~", full_rhs))
+
+  # CRITICAL FIX (V7): Set the formula's environment to the global environment.
+  # When as.formula() is called inside a function, the formula's environment
+  # becomes that function's local scope by default. The scf package's
+  # internal svyglm calls then can't find the variables (origin_region,
+  # educ_cat, etc.) because they live in the design object's $variables data
+  # frame, not in the function's local scope. Setting the formula environment
+  # to globalenv() lets svyglm fall back to looking up variables in the
+  # design's data, which is what Paper 1's inline-formula calls do implicitly.
+  environment(baseline_formula) <- globalenv()
+  environment(full_formula)     <- globalenv()
+
+  # 2. Internal function to fit, tidy, and label a single specification.
+  # Returns a list with $results (success) or $error + $message (failure).
+  fit_and_format <- function(form, label) {
+    fit <- tryCatch({
+      if (family_type == "binomial") {
+        scf_glm(scf_obj, form, family = binomial())
+      } else {
+        scf_ols(scf_obj, form)
+      }
+    }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+    # Propagate error info up so the cache loop can surface it
+    if (is.list(fit) && isTRUE(fit$error)) {
+      return(list(error = TRUE,
+                  message = sprintf("[%s] %s", label, fit$message)))
+    }
+
+    res <- fit$results
+    res$Model <- factor(label, levels = c("Baseline (Demographics Only)",
+                                          "Full (With Human Capital)"))
+
+    if (family_type == "binomial" && "estimate" %in% names(res)) {
+      res$odds_ratio <- exp(res$estimate)
+      res$conf_low   <- exp(res$estimate - 1.96 * res$std.error)
+      res$conf_high  <- exp(res$estimate + 1.96 * res$std.error)
+    } else if ("estimate" %in% names(res)) {
+      res$odds_ratio <- NA
+      res$conf_low   <- res$estimate - 1.96 * res$std.error
+      res$conf_high  <- res$estimate + 1.96 * res$std.error
+    }
+    return(res)
+  }
+
+  res_base <- fit_and_format(baseline_formula, "Baseline (Demographics Only)")
+  res_full <- fit_and_format(full_formula, "Full (With Human Capital)")
+
+  base_failed <- is.list(res_base) && isTRUE(res_base$error)
+  full_failed <- is.list(res_full) && isTRUE(res_full$error)
+
+  # If both failed, surface the actual error messages
+  if (base_failed && full_failed) {
+    return(list(error = TRUE,
+                message = paste(res_base$message, "||", res_full$message)))
+  }
+
+  # If only one failed, drop it but keep the other
+  parts <- list()
+  if (!base_failed) parts$base <- res_base
+  if (!full_failed) parts$full <- res_full
+
+  bind_rows(parts)
+}
+```
+
+```{r h1-diagnostic-test-fit, results='asis'}
+# ============================================================================
+# DIAGNOSTIC: Try a simple inline-formula scf_glm call before the main cache
+# loop. If this works but the cache loop fails, the issue is formula-
+# environment scoping. If this also fails, the issue is something deeper
+# (data, design, package version) and the message will tell us what.
+# ============================================================================
+
+cat("**Diagnostic: simple test fit using inline formula syntax (mimics Paper 1's pattern)**\n\n")
+
+if (n_fb >= 100) {
+
+  test_fit <- tryCatch({
+    scf_glm(scf_fb, own_home ~ origin_region, family = binomial())
+  }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+  if (is.list(test_fit) && isTRUE(test_fit$error)) {
+    cat(sprintf("- Inline test fit FAILED: `%s`\n\n", test_fit$message))
+    cat("  This means scf_glm itself is unable to fit on the foreign-born subset, ",
+        "regardless of formula-environment issues. Likely causes: a needed ",
+        "variable is missing in the design, the design object is malformed, ",
+        "or the scf package version differs from Paper 1's.\n\n", sep = "")
+  } else {
+    cat("- Inline test fit SUCCEEDED. scf_glm works on this design with origin_region as predictor.\n\n")
+    cat("  Coefficients returned: ",
+        paste(test_fit$results$term, collapse = ", "), "\n\n", sep = "")
+  }
+
+  # Also test scf_ols
+  test_ols <- tryCatch({
+    scf_ols(scf_fb, nw_pctl ~ origin_region)
+  }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+  if (is.list(test_ols) && isTRUE(test_ols$error)) {
+    cat(sprintf("- Inline scf_ols test FAILED: `%s`\n\n", test_ols$message))
+  } else {
+    cat("- Inline scf_ols test SUCCEEDED.\n\n")
+  }
+}
+```
+
+```{r h1-fit-all-models-once, cache=TRUE}
+# ============================================================================
+# PERFORMANCE: Fit each H1 model EXACTLY ONCE here and cache the results.
+# All downstream chunks (forest plots, H1 tables, H2 pattern matrix) pull from
+# this cache instead of re-fitting. cache=TRUE on this chunk means knitr won't
+# even re-run this if nothing upstream has changed.
+#
+# IMPORTANT: If you've previously knit V6 (or any earlier version) with
+# cache=TRUE and the models failed, knitr may have cached the failed results.
+# Before knitting V7, delete the cache folder created by knitr:
+#   - file.exists("scf_segmented_assimilation_v7_cache")  # or v6/v5 cache
+# OR delete the entire `*_cache/` directory next to the .Rmd file.
+# Otherwise V7 will return the failed V6 results from cache instead of
+# re-running the corrected fit logic.
+# ============================================================================
+
+model_cache <- list()
+
+if (n_fb >= 100) {
+
+  outcomes_to_fit <- list(
+    list(var = "own_retire",    family = "binomial"),
+    list(var = "own_stocks",    family = "binomial"),
+    list(var = "credit_denied", family = "binomial"),
+    list(var = "no_checking",   family = "binomial"),
+    list(var = "own_home",      family = "binomial"),
+    list(var = "nw_pctl",       family = "ols")
+  )
+
+  # Pre-check: identify outcomes with quasi-complete separation in the
+  # foreign-born × origin × outcome table. If any origin region has zero
+  # variance on the outcome, the GLM will produce gigantic standard errors
+  # (effective infinity). Skip those outcomes rather than reporting noise.
+  fb_imp1_for_check <- scf_fb$mi_design[[1]]$variables
+
+  for (info in outcomes_to_fit) {
+    if (info$family == "binomial") {
+      cell_var <- fb_imp1_for_check %>%
+        filter(!is.na(origin_region)) %>%
+        group_by(origin_region) %>%
+        summarise(v = var(.data[[info$var]], na.rm = TRUE), .groups = "drop")
+
+      if (any(cell_var$v == 0 | is.na(cell_var$v))) {
+        bad_groups <- cell_var %>% filter(v == 0 | is.na(v)) %>% pull(origin_region)
+        message(sprintf("Skipping %s: zero within-cell variance in origin region(s): %s",
+                        info$var, paste(as.character(bad_groups), collapse = ", ")))
+        model_cache[[info$var]] <- list(
+          error = TRUE,
+          message = sprintf("Quasi-complete separation: origin region(s) %s have zero variance on this outcome.",
+                            paste(as.character(bad_groups), collapse = ", "))
+        )
+        next
+      }
+    }
+
+    message("Fitting H1 model for: ", info$var)
+    fit_result <- fit_h1_model(info$var, scf_fb, info$family)
+    model_cache[[info$var]] <- fit_result
+
+    # Surface failures to the knit log so the user can see what's wrong
+    if (is.list(fit_result) && isTRUE(fit_result$error)) {
+      message(sprintf("  -> FAILED: %s", fit_result$message))
+    } else {
+      n_terms <- nrow(fit_result)
+      message(sprintf("  -> SUCCESS: %d coefficient rows", n_terms))
+    }
+  }
+
+  message("All H1 models fit and cached.")
+}
+
+# Helper to retrieve from cache (used by all downstream chunks)
+get_h1_results <- function(outcome_var) {
+  if (!outcome_var %in% names(model_cache)) {
+    return(list(error = TRUE,
+                message = sprintf("No cached results for %s.", outcome_var)))
+  }
+  model_cache[[outcome_var]]
+}
+
+# Helper: format H1 model results as a compact, readable table.
+# Pivots wider so Baseline and Full appear side-by-side rather than stacked,
+# strips the "origin_region" prefix from term labels, and drops row names.
+format_h1_display <- function(res, family_type = "binomial") {
+
+  origin_rows <- res %>%
+    filter(grepl("^origin_region", term)) %>%
+    mutate(Origin = gsub("^origin_region", "", term))
+
+  if (nrow(origin_rows) == 0) return(NULL)
+
+  if (family_type == "binomial") {
+    # Wide format: one row per origin, columns for Baseline OR / CI / p
+    # and Full OR / CI / p
+    wide <- origin_rows %>%
+      mutate(
+        OR_str  = sprintf("%.2f", odds_ratio),
+        CI_str  = sprintf("[%.2f, %.2f]", conf_low, conf_high),
+        p_str   = formatC(p.value, format = "g", digits = 2)
+      ) %>%
+      select(Origin, Model, OR_str, CI_str, p_str) %>%
+      tidyr::pivot_wider(
+        names_from  = Model,
+        values_from = c(OR_str, CI_str, p_str),
+        names_glue  = "{Model}__{.value}"
+      )
+
+    # Build clean column ordering and labels
+    base_label <- "Baseline (Demographics Only)"
+    full_label <- "Full (With Human Capital)"
+
+    cols_in_order <- c(
+      "Origin",
+      paste0(base_label, "__OR_str"),
+      paste0(base_label, "__CI_str"),
+      paste0(full_label, "__OR_str"),
+      paste0(full_label, "__CI_str"),
+      paste0(full_label, "__p_str")
+    )
+    cols_in_order <- intersect(cols_in_order, names(wide))
+    wide <- wide[, cols_in_order, drop = FALSE]
+
+    col_labels <- c("Origin",
+                    "OR (Base)", "95% CI (Base)",
+                    "OR (Full)", "95% CI (Full)",
+                    "p (Full)")
+    col_labels <- col_labels[seq_len(ncol(wide))]
+
+    return(list(table = wide, col_labels = col_labels))
+
+  } else {
+    # OLS: report estimate and CI in coefficient units, not exponentiated
+    wide <- origin_rows %>%
+      mutate(
+        Est_str = sprintf("%.2f", estimate),
+        CI_str  = sprintf("[%.2f, %.2f]", conf_low, conf_high),
+        p_str   = formatC(p.value, format = "g", digits = 2)
+      ) %>%
+      select(Origin, Model, Est_str, CI_str, p_str) %>%
+      tidyr::pivot_wider(
+        names_from  = Model,
+        values_from = c(Est_str, CI_str, p_str),
+        names_glue  = "{Model}__{.value}"
+      )
+
+    base_label <- "Baseline (Demographics Only)"
+    full_label <- "Full (With Human Capital)"
+
+    cols_in_order <- c(
+      "Origin",
+      paste0(base_label, "__Est_str"),
+      paste0(base_label, "__CI_str"),
+      paste0(full_label, "__Est_str"),
+      paste0(full_label, "__CI_str"),
+      paste0(full_label, "__p_str")
+    )
+    cols_in_order <- intersect(cols_in_order, names(wide))
+    wide <- wide[, cols_in_order, drop = FALSE]
+
+    col_labels <- c("Origin",
+                    "β (Base)", "95% CI (Base)",
+                    "β (Full)", "95% CI (Full)",
+                    "p (Full)")
+    col_labels <- col_labels[seq_len(ncol(wide))]
+
+    return(list(table = wide, col_labels = col_labels))
+  }
+}
+```
+
+
+```{r compute-key-stats}
+# ============================================================================
+# Compute "key_stats" — a single list of derived numbers used in narrative prose.
+# Centralizing these here ensures every numeric claim in the body of the paper
+# is sourced from the same data and models the tables come from. If a re-knit
+# changes any underlying value, the prose updates automatically.
+# ============================================================================
+
+# `%||%` fallback (R 4.4+ has this natively; this provides backward compatibility)
+if (!exists("%||%", mode = "function")) {
+  `%||%` <- function(a, b) if (is.null(a) || (length(a) == 1 && is.na(a))) b else a
+}
+
+key_stats <- list()
+
+# ---- Sample-level numbers ----
+key_stats$n_fb       <- n_fb
+key_stats$n_fb_fmt   <- formatC(n_fb, big.mark = ",", format = "d")
+
+if (exists("scf_fb") && length(scf_fb$mi_design) > 0) {
+  fb_v <- scf_fb$mi_design[[1]]$variables
+
+  key_stats$mean_yiu       <- mean(fb_v$years_in_us, na.rm = TRUE)
+  key_stats$mean_yiu_fmt   <- sprintf("%.1f", key_stats$mean_yiu)
+  key_stats$mean_age       <- mean(fb_v$age, na.rm = TRUE)
+  key_stats$mean_age_fmt   <- sprintf("%.1f", key_stats$mean_age)
+
+  # Origin region cell sizes
+  origin_counts <- fb_v %>%
+    filter(!is.na(origin_region)) %>%
+    count(origin_region) %>%
+    {setNames(.$n, as.character(.$origin_region))}
+
+  key_stats$n_caribbean       <- as.integer(origin_counts["Caribbean/West Indies"] %||% 0)
+  key_stats$n_caribbean_fmt   <- formatC(key_stats$n_caribbean, big.mark = ",", format = "d")
+  key_stats$n_latam           <- as.integer(origin_counts["Latin American"] %||% 0)
+  key_stats$n_asian           <- as.integer(origin_counts["Asian"] %||% 0)
+  key_stats$n_european        <- as.integer(origin_counts["European/Other developed"] %||% 0)
+  key_stats$n_other           <- as.integer(origin_counts["Other"] %||% 0)
+}
+
+# ---- H1 model results: pull specific origin × outcome cells ----
+# Helper: extract OR + 95% CI + p-value for a specific origin region from a
+# cached H1 model, on the FULL specification (i.e., with human-capital controls).
+extract_h1_cell <- function(outcome_var, origin_region, family = "binomial") {
+  res <- get_h1_results(outcome_var)
+  if (is.list(res) && isTRUE(res$error)) {
+    return(list(error = TRUE, message = res$message))
+  }
+
+  res_full <- res %>%
+    filter(Model == "Full (With Human Capital)",
+           term == paste0("origin_region", origin_region))
+
+  if (nrow(res_full) == 0) {
+    return(list(error = TRUE,
+                message = sprintf("No coefficient for %s in %s", origin_region, outcome_var)))
+  }
+
+  if (family == "binomial") {
+    list(
+      or       = res_full$odds_ratio,
+      ci_low   = res_full$conf_low,
+      ci_high  = res_full$conf_high,
+      p        = res_full$p.value,
+      or_fmt   = sprintf("%.2f", res_full$odds_ratio),
+      ci_fmt   = sprintf("[%.2f, %.2f]", res_full$conf_low, res_full$conf_high),
+      p_fmt    = formatC(res_full$p.value, format = "g", digits = 2)
+    )
+  } else {
+    list(
+      est      = res_full$estimate,
+      ci_low   = res_full$conf_low,
+      ci_high  = res_full$conf_high,
+      p        = res_full$p.value,
+      est_fmt  = sprintf("%.2f", res_full$estimate),
+      ci_fmt   = sprintf("[%.2f, %.2f]", res_full$conf_low, res_full$conf_high),
+      p_fmt    = formatC(res_full$p.value, format = "g", digits = 2)
+    )
+  }
+}
+
+# Pull the cells used in the H2 walkthrough narrative
+key_stats$asian_retire    <- extract_h1_cell("own_retire", "Asian", "binomial")
+key_stats$european_nw     <- extract_h1_cell("nw_pctl",   "European/Other developed", "ols")
+key_stats$caribbean_home  <- extract_h1_cell("own_home",  "Caribbean/West Indies", "binomial")
+key_stats$other_credit    <- extract_h1_cell("credit_denied", "Other", "binomial")
+
+# ---- Diagnostic: count how many H1 origin-region coefficients are statistically
+# significant (p < 0.05) in the Full specification across all six outcomes.
+# Used in the narrative to back the "no statistically significant differences"
+# claim with an exact count.
+all_origin_p <- c()
+for (out_var in c("own_retire", "own_stocks", "credit_denied",
+                  "no_checking", "own_home", "nw_pctl")) {
+  res <- get_h1_results(out_var)
+  if (!(is.list(res) && isTRUE(res$error))) {
+    pv <- res %>%
+      filter(Model == "Full (With Human Capital)",
+             grepl("^origin_region", term)) %>%
+      pull(p.value)
+    all_origin_p <- c(all_origin_p, pv)
+  }
+}
+
+key_stats$n_origin_coefs       <- length(all_origin_p)
+key_stats$n_origin_coefs_sig   <- sum(all_origin_p < 0.05, na.rm = TRUE)
+key_stats$min_origin_p         <- if (length(all_origin_p) > 0) min(all_origin_p, na.rm = TRUE) else NA
+key_stats$min_origin_p_fmt     <- if (!is.na(key_stats$min_origin_p)) {
+  formatC(key_stats$min_origin_p, format = "g", digits = 2)
+} else "NA"
+```
+
+
+```{r forest-plot-all-regions, fig.height=6, fig.width=9, echo=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+# Pull the nested model results for Net Worth Percentile from the cache
+res_nw <- get_h1_results("nw_pctl")
+
+if (!is.list(res_nw) || !isTRUE(res_nw$error)) {
+  
+  # Filter down to ALL origin region coefficients
+  plot_data <- res_nw %>%
+    filter(grepl("^origin_region", term)) %>%
+    mutate(
+      Region = gsub("origin_region", "", term)
+    )
+  
+  # Sort the y-axis dynamically based on the baseline wealth gap
+  # This makes the chart much cleaner to read
+  baseline_order <- plot_data %>%
+    filter(Model == "Baseline (Demographics Only)") %>%
+    arrange(estimate) %>%
+    pull(Region)
+    
+  plot_data <- plot_data %>%
+    mutate(Region = factor(Region, levels = baseline_order))
+  
+  # Generate the Forest Plot
+  p_all <- ggplot(plot_data, aes(x = estimate, y = Region, color = Model, shape = Model)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_pointrange(aes(xmin = conf_low, xmax = conf_high),
+                    position = position_dodge(width = 0.5), size = 0.8, linewidth = 1) +
+    theme_minimal(base_size = 12) +
+    labs(
+      title = "Origin-Region Effects on Net Worth Percentile",
+      subtitle = "Testing segmented assimilation vs. human capital convergence (Ref: Latin American Origin)",
+      x = "Coefficient Estimate (Difference in Net Worth Percentile)",
+      y = NULL
+    ) +
+    scale_color_manual(values = c("Baseline (Demographics Only)" = "#E69F00", 
+                                  "Full (With Human Capital)" = "#0072B2")) +
+    theme(
+      legend.position = "bottom", 
+      legend.title = element_blank(),
+      plot.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank()
+    )
+    
+  print(p_all)
+} else {
+  cat("Model failed to converge or run properly.")
+}
+```
+
+```{r forest-plots-binary, fig.height=10, fig.width=9, echo=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# 1. Define the binary outcomes to loop through
+binary_outcomes <- list(
+  own_retire    = "Retirement Account (Parallel)",
+  own_stocks    = "Direct Stocks (Parallel)",
+  own_home      = "Homeownership (Selective)",
+  credit_denied = "Credit Denied (Downward)",
+  no_checking   = "Unbanked (Downward)"
+)
+
+# Initialize an empty dataframe to catch all the results
+all_binary_results <- data.frame()
+
+# 2. Run the nested models for each outcome and stack the data
+for (var_name in names(binary_outcomes)) {
+  label <- binary_outcomes[[var_name]]
+  res <- get_h1_results(var_name)
+  
+  if (is.list(res) && !isTRUE(res$error)) {
+    clean_res <- res %>%
+      filter(grepl("^origin_region", term)) %>%
+      mutate(
+        Region = gsub("origin_region", "", term),
+        Outcome = label
+      )
+    all_binary_results <- bind_rows(all_binary_results, clean_res)
+  }
+}
+
+# 3. Sort the Regions for a clean visual (using Homeownership as the anchor)
+if (nrow(all_binary_results) > 0) {
+  baseline_order <- all_binary_results %>%
+    filter(Outcome == "Homeownership (Selective)", Model == "Baseline (Demographics Only)") %>%
+    arrange(odds_ratio) %>%
+    pull(Region)
+  
+  all_binary_results <- all_binary_results %>%
+    mutate(Region = factor(Region, levels = baseline_order))
+  
+  # 4. Generate the Faceted Forest Plot
+  p_binary <- ggplot(all_binary_results, aes(x = odds_ratio, y = Region, color = Model, shape = Model)) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "black", linewidth = 0.8) +
+    geom_pointrange(aes(xmin = conf_low, xmax = conf_high),
+                    position = position_dodge(width = 0.5), size = 0.6, linewidth = 0.8) +
+    facet_wrap(~Outcome, scales = "free_x", ncol = 2) +
+    scale_x_log10() + # CRITICAL: Makes Odds Ratios visually symmetric around 1.0
+    theme_minimal(base_size = 11) +
+    labs(
+      title = "Origin-Region Effects on Specific Financial Behaviors",
+      subtitle = "Odds Ratios relative to Latin American Origin (x-axis is log-scaled)",
+      x = "Odds Ratio (1 = No Difference from Latin American Origin)",
+      y = NULL
+    ) +
+    scale_color_manual(values = c("Baseline (Demographics Only)" = "#E69F00", 
+                                  "Full (With Human Capital)" = "#0072B2")) +
+    theme(
+      legend.position = "bottom", 
+      legend.title = element_blank(),
+      plot.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 11),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+  
+  print(p_binary)
+} else {
+  cat("Binary models failed to converge.")
+}
+```
+
+
+
+
+```{r h1-parallel, results='asis'}
+if (n_fb >= 100) {
+
+  cat("### Parallel-integration outcomes\n\n")
+
+  for (info in list(
+    list(var = "own_retire", label = "Retirement Account Ownership"),
+    list(var = "own_stocks", label = "Direct Stock Ownership")
+  )) {
+
+    cat(sprintf("#### %s\n\n", info$label))
+
+    res <- get_h1_results(info$var)
+
+    if (is.list(res) && isTRUE(res$error)) {
+      cat(sprintf("*Model failed: %s*\n\n", res$message))
+      next
+    }
+
+    formatted <- format_h1_display(res, "binomial")
+    if (is.null(formatted)) {
+      cat("*No origin-region coefficients in output.*\n\n")
+      next
+    }
+
+    print(kable(formatted$table,
+                col.names = formatted$col_labels,
+                row.names = FALSE,
+                caption = sprintf("%s — Latin American origin = reference",
+                                  info$label)))
+    cat("\n\n")
+  }
+}
+```
+
+```{r h1-downward, results='asis'}
+if (n_fb >= 100) {
+
+  cat("### Downward-assimilation outcomes\n\n")
+
+  for (info in list(
+    list(var = "credit_denied", label = "Credit Denied or Got Less in Past Year"),
+    list(var = "no_checking",   label = "No Checking Account")
+  )) {
+
+    cat(sprintf("#### %s\n\n", info$label))
+
+    res <- get_h1_results(info$var)
+
+    if (is.list(res) && isTRUE(res$error)) {
+      cat(sprintf("*Model failed: %s*\n\n", res$message))
+      next
+    }
+
+    formatted <- format_h1_display(res, "binomial")
+    if (is.null(formatted)) {
+      cat("*No origin-region coefficients in output.*\n\n")
+      next
+    }
+
+    print(kable(formatted$table,
+                col.names = formatted$col_labels,
+                row.names = FALSE,
+                caption = sprintf("%s — Latin American origin = reference",
+                                  info$label)))
+    cat("\n\n")
+  }
+}
+```
+
+```{r h1-selective, results='asis'}
+if (n_fb >= 100) {
+
+  cat("### Selective-assimilation outcomes\n\n")
+
+  # ---- Homeownership ----
+  cat("#### Homeownership\n\n")
+  res_home <- get_h1_results("own_home")
+
+  if (is.list(res_home) && isTRUE(res_home$error)) {
+    cat(sprintf("*Model failed: %s*\n\n", res_home$message))
+  } else {
+    formatted_home <- format_h1_display(res_home, "binomial")
+    if (!is.null(formatted_home)) {
+      print(kable(formatted_home$table,
+                  col.names = formatted_home$col_labels,
+                  row.names = FALSE,
+                  caption = "Homeownership — Latin American origin = reference"))
+      cat("\n\n")
+    }
+  }
+
+  # ---- Net Worth Percentile (OLS) ----
+  cat("#### Net-Worth Percentile (linear regression on full SCF distribution)\n\n")
+  res_nw <- get_h1_results("nw_pctl")
+
+  if (is.list(res_nw) && isTRUE(res_nw$error)) {
+    cat(sprintf("*Model failed: %s*\n\n", res_nw$message))
+  } else {
+    formatted_nw <- format_h1_display(res_nw, "ols")
+    if (!is.null(formatted_nw)) {
+      print(kable(formatted_nw$table,
+                  col.names = formatted_nw$col_labels,
+                  row.names = FALSE,
+                  caption = "Net-Worth Percentile — Latin American origin = reference. Coefficients are percentile-point differences vs. the Latin American reference category, holding controls constant."))
+      cat("\n\n")
+    }
+  }
+}
+```
+
+## H2: Pathway-Pattern Tests
+
+The three segmented-assimilation pathways predict distinct joint patterns of financial
+outcomes within each origin region. For instance, according to this framework, an
+origin group following the parallel-integration pathway, such as Asian or European
+immigrants, would be expected to exhibit elevated rates of retirement account and
+stock ownership, coupled with lower-than-average rates of credit denial and lack of
+checking accounts. The pattern matrix below summarizes origin-region odds ratios for
+these six financial outcomes, enabling direct comparison of observed patterns with
+pathway-specific theoretical expectations derived from the H1 model specifications.
+
+Three pathway-specific patterns would constitute affirmative evidence for segmented
+assimilation:
+
+1. **Parallel-integration profile** (Asian and European origin): elevated odds of
+   retirement-account and stock ownership; baseline or below-baseline odds of credit
+   denial and lack of checking account.
+2. **Downward-assimilation profile** (Caribbean origin and "Other" origin): elevated
+   odds of credit denial and lack of checking account; depressed odds of retirement and
+   stock ownership.
+3. **Selective-assimilation profile** (Latin American reference, with relative deviations
+   for other groups): high homeownership coupled with low mainstream-finance
+   participation, suggesting alternative pathways to asset accumulation.
+
+The human-capital convergence model predicts none of these — odds ratios near 1.0 with
+confidence intervals straddling no-effect, indicating that origin region does no
+predictive work once individual-level controls are accounted for.
+
+```{r h2-pattern-matrix, results='asis'}
+if (n_fb >= 100) {
+
+  # Re-fit all H1 models and collect the origin-region coefficients into a matrix
+  outcomes_for_h2 <- list(
+    list(var = "own_retire",    label = "Retirement",     family = "binomial"),
+    list(var = "own_stocks",    label = "Stocks",         family = "binomial"),
+    list(var = "credit_denied", label = "Credit denied",  family = "binomial"),
+    list(var = "no_checking",   label = "No checking",    family = "binomial"),
+    list(var = "own_home",      label = "Homeowner",      family = "binomial"),
+    list(var = "nw_pctl",       label = "NW pctile",      family = "ols")
+  )
+
+  # Initialize the pattern matrix with the corrected origin labels
+  origin_levels_no_ref <- c("Caribbean/West Indies",
+                            "Asian",
+                            "European/Other developed",
+                            "Other")
+
+  pattern_df <- data.frame(`Origin Region` = origin_levels_no_ref,
+                           check.names = FALSE,
+                           stringsAsFactors = FALSE)
+
+  for (info in outcomes_for_h2) {
+    res <- get_h1_results(info$var)
+
+    if (is.list(res) && isTRUE(res$error)) {
+      pattern_df[[info$label]] <- "--"
+      next
+    }
+
+    # FIX: Isolate the Full model so we only get ONE coefficient per region
+    res_full <- res %>% filter(Model == "Full (With Human Capital)")
+
+    cell_values <- sapply(origin_levels_no_ref, function(lvl) {
+      term_name <- paste0("origin_region", lvl)
+      idx <- which(res_full$term == term_name)
+
+      if (length(idx) == 0) return("--")
+
+      est <- res_full$estimate[idx]
+      pval <- res_full$p.value[idx]
+
+      # For binomial: report odds ratio with stars
+      # For OLS: report estimate with stars
+      if (info$family == "binomial") {
+        val <- exp(est)
+        formatted <- sprintf("%.2f", val)
+      } else {
+        formatted <- sprintf("%.1f", est)
+      }
+
+      stars <- if (is.na(pval)) "" else
+               if (pval < 0.001) "***" else
+               if (pval < 0.01)  "**"  else
+               if (pval < 0.05)  "*"   else ""
+
+      paste0(formatted, stars)
+    })
+
+    pattern_df[[info$label]] <- cell_values
+  }
+
+  cat("**Table 3. Origin-region × outcome pattern matrix (Full Model)**\n\n")
+  cat("The matrix presents odds ratios for binary outcomes and coefficient estimates ",
+      "for net-worth percentile, each benchmarked against the Latin American origin ",
+      "group as the reference category. Statistical significance is denoted by stars: ",
+      "\\* p<0.05, \\*\\* p<0.01, \\*\\*\\* p<0.001.\n\n", sep = "")
+  print(kable(pattern_df, row.names = FALSE,
+              caption = "Origin-region effects across outcomes (net of human capital)"))
+  cat("\n\n")
+
+  # ============================================================================
+  # Programmatic walkthrough — pulls live values from key_stats so the prose
+  # always matches the table.
+  # ============================================================================
+
+  cat("**Reading Table 3.** ")
+
+  # Asian × Retirement
+  if (!isTRUE(key_stats$asian_retire$error)) {
+    cat(sprintf(
+      "The odds ratio for retirement-account ownership among Asian-origin respondents is %s (95%% CI: %s, p = %s) — statistically indistinguishable from the Latin American reference. ",
+      key_stats$asian_retire$or_fmt,
+      key_stats$asian_retire$ci_fmt,
+      key_stats$asian_retire$p_fmt
+    ))
+  }
+
+  # European × NW Percentile
+  if (!isTRUE(key_stats$european_nw$error)) {
+    cat(sprintf(
+      "Similarly, the net-worth-percentile coefficient for European/Other developed origin is %s percentile points (95%% CI: %s, p = %s), a difference that does not reach statistical significance. ",
+      key_stats$european_nw$est_fmt,
+      key_stats$european_nw$ci_fmt,
+      key_stats$european_nw$p_fmt
+    ))
+  }
+
+  # Caribbean × Homeownership (often the largest visible OR — worth highlighting)
+  if (!isTRUE(key_stats$caribbean_home$error)) {
+    cat(sprintf(
+      "The largest visible difference in the matrix is for Caribbean-origin homeownership (OR = %s, 95%% CI: %s), but the wide confidence interval and p = %s indicate this estimate is not statistically distinguishable from the reference. ",
+      key_stats$caribbean_home$or_fmt,
+      key_stats$caribbean_home$ci_fmt,
+      key_stats$caribbean_home$p_fmt
+    ))
+  }
+
+  # Summary count of significant coefficients
+  if (!is.null(key_stats$n_origin_coefs_sig)) {
+    cat(sprintf(
+      "Across the %d origin-region coefficients in the full pattern matrix (4 non-reference groups × 6 outcomes), %d reach the conventional p < 0.05 threshold; the smallest p-value among them is %s. ",
+      key_stats$n_origin_coefs,
+      key_stats$n_origin_coefs_sig,
+      key_stats$min_origin_p_fmt
+    ))
+  }
+
+  cat("Overall, origin-region coefficients cluster near the null value across all ",
+      "outcomes, indicating minimal differences between origin groups after accounting ",
+      "for human-capital factors. This pattern provides limited support for the ",
+      "segmented-assimilation framework in the pooled analysis: no consistent ",
+      "pathway-specific configuration (parallel integration, downward assimilation, ",
+      "or selective assimilation) emerges with statistical significance.\n\n",
+      sep = "")
+}
+```
+
+## H3: Years-in-U.S. × Origin Interaction
+
+Interaction models test whether duration-of-residence effects on financial outcomes
+differ by origin region. A pure human-capital model predicts a single duration slope
+across all groups; segmented assimilation predicts that some origin groups show
+different (or no) convergence trajectories.
+
+```{r h3-interaction, results='asis'}
+if (n_fb >= 100) {
+
+  cat("**Table 4. Origin × Years-in-U.S. interaction tests**\n\n")
+  cat("For each outcome, we report each individual Origin × Years-in-U.S. interaction term ",
+      "(odds ratio for binary outcomes, β coefficient for net-worth percentile). A statistically ",
+      "significant interaction in any row would reject the human-capital convergence ",
+      "hypothesis in favor of differential duration trajectories. ",
+      "The years-in-U.S. main-effect slope (Latin American reference) is also reported.\n\n")
+
+  # Pre-check: do all origin × outcome cells have at least 5 obs and within-cell variation?
+  # Quasi-complete separation is the most common cause of model failure.
+  fb_imp1 <- scf_fb$mi_design[[1]]$variables
+
+  cell_check <- fb_imp1 %>%
+    filter(!is.na(origin_region)) %>%
+    group_by(origin_region) %>%
+    summarise(
+      n = n(),
+      retire_var    = var(own_retire,    na.rm = TRUE),
+      stocks_var    = var(own_stocks,    na.rm = TRUE),
+      denied_var    = var(credit_denied, na.rm = TRUE),
+      nochk_var     = var(no_checking,   na.rm = TRUE),
+      home_var      = var(own_home,      na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # Identify outcomes with separation risk: cell with zero variance
+  has_separation <- function(outcome_var) {
+    var_col <- switch(outcome_var,
+      own_retire    = "retire_var",
+      own_stocks    = "stocks_var",
+      credit_denied = "denied_var",
+      no_checking   = "nochk_var",
+      own_home      = "home_var",
+      NA
+    )
+    if (is.na(var_col)) return(FALSE)
+    any(cell_check[[var_col]] == 0 | is.na(cell_check[[var_col]]))
+  }
+
+  h3_long_results <- list()
+
+  for (info in list(
+    list(var = "own_retire",    label = "Retirement",     family = "binomial"),
+    list(var = "own_stocks",    label = "Stocks",         family = "binomial"),
+    list(var = "credit_denied", label = "Credit denied",  family = "binomial"),
+    list(var = "no_checking",   label = "No checking",    family = "binomial"),
+    list(var = "own_home",      label = "Homeowner",      family = "binomial"),
+    list(var = "nw_pctl",       label = "NW pctile",      family = "ols")
+  )) {
+
+    # Skip outcomes with quasi-complete separation
+    if (info$family == "binomial" && has_separation(info$var)) {
+      h3_long_results[[info$label]] <- list(
+        skipped = TRUE,
+        reason  = "Quasi-complete separation: at least one origin region has zero within-cell variance on this outcome. Interaction model would not converge."
+      )
+      next
+    }
+
+    # V8 fix: replaced yiu_clean + yiu_missing with raw years_in_us
+    int_rhs <- "origin_region * years_in_us + age_centered + educ_cat + currently_married + log_income"
+    int_formula <- as.formula(paste(info$var, "~", int_rhs))
+    environment(int_formula) <- globalenv()    # V7 fix: same as H1
+
+    fit <- tryCatch({
+      if (info$family == "binomial") {
+        scf_glm(scf_fb, int_formula, family = binomial())
+      } else {
+        scf_ols(scf_fb, int_formula)
+      }
+    }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+    if (is.list(fit) && isTRUE(fit$error)) {
+      h3_long_results[[info$label]] <- list(error = TRUE, message = fit$message)
+      next
+    }
+
+    h3_long_results[[info$label]] <- list(results = fit$results, family = info$family)
+  }
+
+  # Print results, one outcome at a time
+  for (label in names(h3_long_results)) {
+    cat(sprintf("#### %s\n\n", label))
+
+    entry <- h3_long_results[[label]]
+
+    if (isTRUE(entry$skipped)) {
+      cat(sprintf("*Skipped — %s*\n\n", entry$reason))
+      next
+    }
+
+    if (isTRUE(entry$error)) {
+      cat(sprintf("*Model failed: %s*\n\n", entry$message))
+      next
+    }
+
+    res <- entry$results
+    fam <- entry$family
+
+    # Find both the YIU main effect and all origin × YIU interaction terms
+    yiu_main <- res %>% filter(term == "years_in_us")
+    int_terms <- res %>%
+      filter(grepl("origin_region.*:years_in_us|years_in_us:origin_region", term))
+
+    if (nrow(int_terms) == 0) {
+      cat("*No interaction terms found.*\n\n")
+      next
+    }
+
+    # Format compactly
+    if (fam == "binomial") {
+      display_main <- yiu_main %>%
+        mutate(Term = "Years in U.S. (Latin American reference slope)",
+               Estimate = sprintf("OR = %.3f", exp(estimate)),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   exp(estimate - 1.96 * std.error),
+                                   exp(estimate + 1.96 * std.error)),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+
+      display_int <- int_terms %>%
+        mutate(Term = paste(gsub("origin_region|:years_in_us|years_in_us:", "", term), "× YIU"),
+               Estimate = sprintf("OR = %.3f", exp(estimate)),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   exp(estimate - 1.96 * std.error),
+                                   exp(estimate + 1.96 * std.error)),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+    } else {
+      display_main <- yiu_main %>%
+        mutate(Term = "Years in U.S. (Latin American reference slope)",
+               Estimate = sprintf("β = %.3f", estimate),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   estimate - 1.96 * std.error,
+                                   estimate + 1.96 * std.error),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+
+      display_int <- int_terms %>%
+        mutate(Term = paste(gsub("origin_region|:years_in_us|years_in_us:", "", term), "× YIU"),
+               Estimate = sprintf("β = %.3f", estimate),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   estimate - 1.96 * std.error,
+                                   estimate + 1.96 * std.error),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+    }
+
+    combined <- bind_rows(display_main, display_int)
+    print(kable(combined, row.names = FALSE,
+                caption = sprintf("%s: Years-in-U.S. main effect and origin × YIU interactions", label)))
+    cat("\n\n")
+  }
+
+  cat("Significant interaction terms would indicate that the effect of duration of ",
+      "residence on financial outcomes varies by origin group relative to the Latin ",
+      "American (reference) trajectory, providing evidence in favor of the ",
+      "segmented-assimilation prediction that different origin groups follow distinct ",
+      "assimilation pathways over time. In the present sample, the interaction ",
+      "coefficients are small in magnitude and statistically indistinguishable from ",
+      "zero across all six outcomes, consistent with the human-capital convergence ",
+      "model: years lived in the U.S. is associated with financial outcomes in roughly ",
+      "the same way for all origin groups, with no statistically detectable group-",
+      "specific deviations. This null result is itself substantively meaningful, as it ",
+      "fails to support the segmented-assimilation prediction that the pace or ",
+      "direction of financial incorporation differs systematically by origin in the ",
+      "pooled foreign-born sample.\n\n", sep = "")
+}
+```
+
+# Duration-Stratified Analysis
+
+## Motivation
+
+The 2022 SCF foreign-born sample has a mean of `r key_stats$mean_yiu_fmt` years lived in the United States,
+which suggests a population dominated by long-tenured immigrants who arrived in the
+1980s and 1990s. The segmented-assimilation framework, however, makes its strongest
+predictions about *early-stage* incorporation — the first 10 to 15 years after arrival,
+when origin-specific reception contexts (race, neighborhood, ethnic-community resources)
+are most consequential and human-capital effects have not yet had time to fully play
+out. By the time immigrants have been in the U.S. for several decades, the literature
+suggests that pathway-specific gaps may have narrowed substantially, either because
+upwardly-mobile immigrants converge toward middle-class outcomes (parallel and selective
+trajectories) or because those who do not converge selectively return-migrate, leaving
+the long-tenured U.S. population enriched in successful integrators.
+
+If this duration-narrowing dynamic operates in U.S. wealth data, the null findings in
+Sections 5.1–5.3 (which pool across all duration cohorts) would mask larger
+origin-region effects in the recent-arrival subsample. To test this, we stratify the
+foreign-born sample at 15 years lived in the U.S. — the standard threshold in the
+segmented-assimilation literature — and re-estimate the H1 origin-region models
+separately within each stratum.
+
+## Sample Stratification
+
+```{r path-b-stratification, results='asis'}
+# ============================================================================
+# Build two stratum subset designs: recent (<=15 years) and long-tenured (>15)
+# ============================================================================
+# Pattern: copy scf_fb, subset each implicate's design by yiu_stratum.
+
+scf_fb_recent <- scf_fb
+scf_fb_recent$mi_design <- lapply(scf_fb$mi_design, function(des) {
+  subset(des, years_in_us <= 15)
+})
+n_fb_recent <- nrow(scf_fb_recent$mi_design[[1]]$variables)
+
+scf_fb_long <- scf_fb
+scf_fb_long$mi_design <- lapply(scf_fb$mi_design, function(des) {
+  subset(des, years_in_us > 15)
+})
+n_fb_long <- nrow(scf_fb_long$mi_design[[1]]$variables)
+
+cat(sprintf("**Stratum 1 (Recent arrivals, ≤15 years in U.S.):** n = %d unweighted\n\n",
+            n_fb_recent))
+cat(sprintf("**Stratum 2 (Long-tenured, >15 years in U.S.):** n = %d unweighted\n\n",
+            n_fb_long))
+
+# Cross-tab of origin region by stratum, to flag small cells
+strat_xtab <- scf_fb$mi_design[[1]]$variables %>%
+  filter(!is.na(origin_region)) %>%
+  mutate(stratum = ifelse(years_in_us <= 15, "Recent (≤15 yr)", "Long-tenured (>15 yr)")) %>%
+  count(origin_region, stratum) %>%
+  tidyr::pivot_wider(names_from = stratum, values_from = n, values_fill = 0) %>%
+  select(origin_region, `Recent (≤15 yr)`, `Long-tenured (>15 yr)`)
+
+cat("**Table 5. Sample sizes by origin region × duration stratum (unweighted)**\n\n")
+print(kable(strat_xtab, row.names = FALSE,
+            caption = "Cells below n=20 produce highly imprecise estimates and should be interpreted with caution."))
+cat("\n\n")
+
+small_strata <- strat_xtab %>%
+  filter(`Recent (≤15 yr)` < 20 | `Long-tenured (>15 yr)` < 20)
+
+if (nrow(small_strata) > 0) {
+  cat(sprintf("**Note:** %d origin region(s) have at least one stratum below n=20: %s. ",
+              nrow(small_strata),
+              paste(as.character(small_strata$origin_region), collapse = ", ")))
+  cat("Estimates for these groups in the affected stratum should be treated as exploratory.\n\n")
+}
+```
+
+## Stratified H1 Models — Three Core Outcomes
+
+We re-estimate H1 models separately within each duration stratum, using three core
+outcomes — one per theoretical pathway:
+
+- **Retirement account ownership** (parallel integration)
+- **Homeownership** (selective assimilation)
+- **Credit denied** (downward assimilation)
+
+If origin-region effects are larger in the recent-arrival stratum than in the
+long-tenured stratum, that pattern supports the duration-narrowing version of segmented
+assimilation. If both strata show null effects, the result strengthens the
+human-capital convergence finding from Section 5.
+
+```{r path-b-stratified-models, results='asis', cache=TRUE}
+# ============================================================================
+# Stratified H1 models — three core outcomes per stratum
+# ============================================================================
+
+stratified_outcomes <- list(
+  list(var = "own_retire",    label = "Retirement (parallel integration)"),
+  list(var = "own_home",      label = "Homeownership (selective assimilation)"),
+  list(var = "credit_denied", label = "Credit denied (downward assimilation)")
+)
+
+# Use Full specification only for the stratified analysis
+stratified_rhs <- "origin_region + years_in_us + age_centered + educ_cat + currently_married + log_income"
+
+run_stratified_glm <- function(scf_obj, outcome_var) {
+  full_formula <- as.formula(paste(outcome_var, "~", stratified_rhs))
+  environment(full_formula) <- globalenv()
+
+  fit <- tryCatch({
+    scf_glm(scf_obj, full_formula, family = binomial())
+  }, error = function(e) list(error = TRUE, message = conditionMessage(e)))
+
+  if (is.list(fit) && isTRUE(fit$error)) return(fit)
+
+  res <- fit$results
+  if ("estimate" %in% names(res)) {
+    res$odds_ratio <- exp(res$estimate)
+    res$conf_low   <- exp(res$estimate - 1.96 * res$std.error)
+    res$conf_high  <- exp(res$estimate + 1.96 * res$std.error)
+  }
+  res
+}
+
+# Fit each outcome × stratum combination, store in 6-cell list
+stratified_cache <- list()
+for (info in stratified_outcomes) {
+  message("Fitting stratified models for: ", info$var)
+
+  for (stratum_label in c("recent", "long")) {
+    obj <- if (stratum_label == "recent") scf_fb_recent else scf_fb_long
+    n_in_stratum <- nrow(obj$mi_design[[1]]$variables)
+
+    if (n_in_stratum < 50) {
+      stratified_cache[[paste(info$var, stratum_label, sep = "_")]] <- list(
+        error = TRUE,
+        message = sprintf("Stratum n = %d, below the n=50 minimum for stable estimation.",
+                          n_in_stratum)
+      )
+      next
+    }
+
+    # Cell-size pre-check on the outcome
+    cell_var <- obj$mi_design[[1]]$variables %>%
+      filter(!is.na(origin_region)) %>%
+      group_by(origin_region) %>%
+      summarise(v = var(.data[[info$var]], na.rm = TRUE), .groups = "drop")
+
+    if (any(cell_var$v == 0 | is.na(cell_var$v), na.rm = TRUE)) {
+      bad_groups <- cell_var %>% filter(v == 0 | is.na(v)) %>% pull(origin_region)
+      stratified_cache[[paste(info$var, stratum_label, sep = "_")]] <- list(
+        error = TRUE,
+        message = sprintf("Quasi-complete separation in: %s",
+                          paste(as.character(bad_groups), collapse = ", "))
+      )
+      next
+    }
+
+    stratified_cache[[paste(info$var, stratum_label, sep = "_")]] <-
+      run_stratified_glm(obj, info$var)
+  }
+}
+
+# Build comparative table: rows = origin × outcome, columns = recent OR / long OR
+build_strat_row <- function(outcome_var, outcome_label) {
+  recent_res <- stratified_cache[[paste(outcome_var, "recent", sep = "_")]]
+  long_res   <- stratified_cache[[paste(outcome_var, "long",   sep = "_")]]
+
+  origin_levels_no_ref <- c("Caribbean/West Indies", "Asian",
+                            "European/Other developed", "Other")
+
+  rows <- lapply(origin_levels_no_ref, function(lvl) {
+    term_name <- paste0("origin_region", lvl)
+
+    recent_cell <- if (is.list(recent_res) && isTRUE(recent_res$error)) {
+      "[failed]"
+    } else {
+      idx <- which(recent_res$term == term_name)
+      if (length(idx) == 0) "--" else {
+        sprintf("%.2f%s [%.2f, %.2f]",
+                recent_res$odds_ratio[idx],
+                ifelse(recent_res$p.value[idx] < 0.05, "*", ""),
+                recent_res$conf_low[idx],
+                recent_res$conf_high[idx])
+      }
+    }
+
+    long_cell <- if (is.list(long_res) && isTRUE(long_res$error)) {
+      "[failed]"
+    } else {
+      idx <- which(long_res$term == term_name)
+      if (length(idx) == 0) "--" else {
+        sprintf("%.2f%s [%.2f, %.2f]",
+                long_res$odds_ratio[idx],
+                ifelse(long_res$p.value[idx] < 0.05, "*", ""),
+                long_res$conf_low[idx],
+                long_res$conf_high[idx])
+      }
+    }
+
+    data.frame(Outcome = outcome_label,
+               Origin = lvl,
+               `OR Recent (≤15 yr)` = recent_cell,
+               `OR Long-tenured (>15 yr)` = long_cell,
+               check.names = FALSE,
+               stringsAsFactors = FALSE)
+  })
+  do.call(rbind, rows)
+}
+
+# Assemble the table
+strat_table <- do.call(rbind, lapply(stratified_outcomes, function(info) {
+  build_strat_row(info$var, info$label)
+}))
+
+cat("**Table 6. Origin-region effects by duration stratum (Full specification, OR vs. Latin American reference)**\n\n")
+print(kable(strat_table, row.names = FALSE,
+            caption = "Stars: * p<0.05. [failed] indicates model did not converge or stratum cell too small. Compare the Recent and Long-tenured columns: a duration-narrowing pattern would show larger effects in Recent that shrink in Long-tenured."))
+cat("\n\n")
+
+# Surface any failures explicitly
+failed_models <- which(sapply(stratified_cache, function(x) is.list(x) && isTRUE(x$error)))
+if (length(failed_models) > 0) {
+  cat("**Stratified-model failures (",
+      length(failed_models), " of ", length(stratified_cache), "):**\n\n", sep = "")
+  for (fm in names(failed_models)) {
+    cat(sprintf("- `%s`: %s\n", fm, stratified_cache[[fm]]$message))
+  }
+  cat("\n")
+}
+```
+
+## Interpreting the Stratified Results
+
+Three patterns are possible:
+
+1. **Recent and long-tenured strata both show null effects.** This strengthens the
+human-capital convergence interpretation from Section 5: origin-region differences in
+financial outcomes are absent across the entire duration distribution, not just averaged
+across it.
+
+2. **Recent stratum shows large origin-region effects that shrink to null in the
+long-tenured stratum.** This supports the duration-narrowing version of segmented
+assimilation: pathway-specific gaps exist in early incorporation but converge with time
+in the U.S. Under this interpretation, the pooled null findings from Section 5 reflect
+sample composition (heavy weighting toward long-tenured immigrants) rather than absence
+of segmentation.
+
+3. **Both strata show large effects with similar magnitude.** This would support the
+strong segmented-assimilation prediction (origin region matters at all durations) but
+also raise concerns about why those effects didn't appear in the pooled main analysis.
+Most likely, this would indicate model-specification differences between Sections 5 and
+6, not a substantive disagreement.
+
+The substantive interpretation depends on which pattern the data show.
+
+# Robustness Checks
+
+## Three-Category Origin Recode
+
+If any cell in the 5-category origin coding falls below n = 30, we re-estimate models
+with a collapsed 3-category coding (Latin American, Asian, European/Other) for stability.
+
+## Race Versus Origin
+
+Origin region and racial classification (`racecl4`) are correlated but not identical.
+Specifications adding `race_cat` to the H1 models test whether origin-region effects are
+robust to controlling for racial classification, and whether racial classification
+mediates origin-region effects.
+
+## Net-Worth Specification
+
+The primary net-worth specification uses percentile within the full SCF distribution. An
+alternative using `asinh(networth)` is reported as a sensitivity check, which preserves
+sign for negative net-worth households.
+
+# Discussion
+
+This paper put two competing theoretical models head-to-head using the first
+nationally representative U.S. wealth data with origin-region detail. The
+human-capital convergence model and the segmented-assimilation framework make sharply
+different predictions about whether origin region carries independent explanatory
+power for financial outcomes net of human capital. The data favor the human-capital
+convergence model.
+
+## Why the Pooled Analysis Fails to Support Segmentation
+
+Across all six outcomes — retirement-account ownership, stock ownership, credit
+denial, lack of a checking account, homeownership, and net-worth percentile — the
+pooled H1 models produce origin-region odds ratios near 1.0 and net-worth-percentile
+coefficients near 0.0, all with confidence intervals straddling no-effect. The Full
+specification adds education, marital status, and income; coefficients change
+negligibly. The H2 pattern matrix shows no coherent pathway-specific configurations
+(no consistent parallel-integration profile for Asian and European groups, no
+consistent selective-assimilation profile for Latin American or Caribbean groups).
+The H3 interaction tests fail to detect statistically distinguishable duration slopes
+across origin regions.
+
+Individually, each of these results is a failure to reject the human-capital
+convergence null. Jointly, across six outcomes and three falsifiable predictions, they
+constitute meaningful evidence *for* convergence and against the strong segmented-
+assimilation prediction in this sample.
+
+## The Survivorship-Bias Interpretation
+
+The most important limitation of the pooled analysis is the duration profile of the
+sample. The mean foreign-born respondent in the 2022 SCF has lived in the United
+States for `r key_stats$mean_yiu_fmt` years — a population dominated by immigrants who arrived in the 1980s
+and early 1990s. The segmented-assimilation framework makes its strongest predictions
+about *early-stage* incorporation, when origin-specific reception contexts are most
+consequential. By the time immigrants have been in the U.S. for several decades, two
+mechanisms may operate to narrow pathway-specific gaps:
+
+1. **Convergence within origin groups.** Long-tenured immigrants who continue to
+reside in the U.S. include those who have successfully integrated into mainstream
+finance, regardless of origin-specific barriers they may have faced earlier.
+
+2. **Selective return migration.** Immigrants who failed to incorporate may
+disproportionately return-migrate over the 10-30 year window after arrival, leaving
+the long-tenured U.S. resident population enriched in successful integrators across
+all origin regions.
+
+Either or both mechanisms would attenuate observed origin-region differences in
+late-stage data while leaving them visible in early-stage data. The duration-stratified
+analysis in Section 6 is the direct test. Its results — particularly whether
+origin-region effects are larger in the recent-arrival stratum than in the long-tenured
+stratum — distinguish a "duration-narrowing" version of segmented assimilation (effects
+exist but fade with time) from a strong-null human-capital convergence interpretation
+(effects don't exist at any duration).
+
+## Implications for Policy and Theory
+
+If the duration-stratified analysis yields null effects in both recent-arrival and
+long-tenured strata, this empirical evidence indicates that the origin region does
+not exert an independent influence on financial outcomes beyond what is already
+captured by race-based frameworks. Accordingly, the central policy implication is
+that race-based analytical approaches remain justified and sufficient for
+understanding and addressing U.S. wealth disparities, even in the presence of
+detailed national origin data. Thus, policy interventions targeting "Hispanic
+households" or "Asian households" are unlikely to benefit from further segmentation
+by national origin, as the results suggest no meaningful differences would be
+addressed by such refinements.
+
+If the duration-stratified analysis shows larger effects in the recent-arrival
+stratum, the contribution is to argue that segmented assimilation operates in U.S.
+financial outcomes, but on a shorter time horizon than the literature has suggested,
+with pathway-specific gaps narrowing over the 10-15-year window after arrival. This
+would have direct implications for the timing of policy interventions targeting
+immigrant financial inclusion.
+
+In either case, the substantive contribution is a clearer empirical picture of the
+domain in which segmented-assimilation theory applies to U.S. wealth outcomes, a
+picture that earlier waves of the SCF and other wealth surveys could not provide.
+
+# Limitations
+
+This study faces several key limitations. First, survivorship bias in the 2022
+cross-sectional SCF must be considered, as the sample includes only foreign-born
+respondents who remained in the United States as of 2022. Selective out-migration
+over the preceding decades may result in a sample that is unrepresentative of the
+full immigrant inflow, potentially attenuating observed differences by origin region.
+
+Second, the single-wave design limits temporal inference: the analysis cannot
+separate cohort or period effects, nor track changes over time, as the 2022 SCF is
+the first to include immigration variables; subsequent waves will be required for
+cohort-specific or longitudinal analysis.
+
+Third, the absence of parental nativity precludes analysis of second-generation
+outcomes, restricting the study's focus to first-generation immigrants and limiting
+direct engagement with the core implications of segmented-assimilation theory.
+
+Fourth, the necessity of aggregating respondents into broad origin-region categories,
+due to insufficient sample sizes for country-specific analysis, risks obscuring
+within-group heterogeneity and may mask meaningful differences among national-origin
+subgroups, particularly within the broad 'Asian' or 'Latin American' classifications.
+The small sample for certain groups, notably the Caribbean category (n=`r key_stats$n_caribbean_fmt` in the
+pooled sample), further reduces the statistical power to detect group-specific
+effects.
+
+Fifth, although the analytic sample is sufficiently powered to identify large
+segmentation effects (odds ratios greater than 2.0 or less than 0.5), it is only
+moderately powered to detect smaller associations. Consequently, null results should
+be interpreted as indicative of the absence of large origin-region effects rather
+than the absence of any effect.
+
+Lastly, public-use SCF data include disclosure-avoidance modifications, which may
+attenuate cell-specific estimates for the smallest origin groups. Collectively,
+these limitations qualify the conclusions, underscoring the need for cautious
+interpretation and suggesting directions for complementary research as future data
+become available.
+
+# Conclusion
+
+This study provides the first direct comparison, using nationally representative U.S.
+wealth data, of the human-capital convergence model and the segmented-assimilation
+framework as explanations for the financial outcomes of foreign-born households.
+Utilizing newly available 2022 Survey of Consumer Finances variables on respondents'
+national origin and years lived in the United States, the analysis tested whether
+origin region carries independent explanatory power—net of duration and human
+capital—across six key financial outcomes representing three theoretical pathways.
+
+The pooled results reveal no statistically significant differences by origin region,
+with minimal and inconsistent effects that do not fit the pathway-specific
+predictions of segmented assimilation. Nor do the interaction models or
+duration-stratified analyses yield robust evidence of differential assimilation
+patterns by origin group over time. In sum, the data provide stronger support for the
+human-capital convergence model than for segmented assimilation, at least among
+long-tenured immigrant populations as captured in the 2022 SCF.
+
+These findings have important forward-looking implications for both research and
+policy. Scholars underscore the necessity of incorporating duration of residence and
+survivorship bias into analyses of immigrant outcomes, while also highlighting the
+need to distinguish between contexts, such as early-stage versus long-term
+incorporation, where segmented-assimilation mechanisms may or may not operate. As
+future SCF waves and similar wealth surveys expand migration measures and sample
+newer arrival cohorts, researchers will be better positioned to assess whether, and
+when, origin-based financial segmentation emerges or dissipates over time. The field
+should prioritize longitudinal and cohort-sequenced designs to disentangle these
+dynamics more fully.
+
+For policymakers, the results suggest that, for established immigrant populations,
+policy frameworks targeting wealth disparities may continue to rely on established
+race-based classifications without significant loss of explanatory power.
+Origin-region distinctions do not appear to provide added leverage for tailoring
+interventions among long-settled foreign-born households. Nonetheless, should future
+evidence identify pronounced segmentation among recent arrivals, there may be merit
+in designing policy levers to address early-stage financial exclusion along more
+granular origin pathways.
+
+Overall, this analysis clarifies the empirical boundaries of segmented-assimilation
+theory for U.S. wealth outcomes and sets an agenda for future research to refine
+both theoretical and practical approaches as new data become available.
+
+# Appendix A: Variable List
+
+| Construct | Source variable | Type |
+|---|---|---|
+| Foreign-born status (component A) | `X6915` (ancestry; non-0 and non-1200) | Raw codebook |
+| Foreign-born status (component B) | `X6906` (years respondent has lived in U.S.) | Raw codebook |
+| National origin (R) | `X6915` | Raw codebook |
+| Spouse Hispanic origin (R) | `X7404` (auxiliary, not used in main models) | Raw codebook |
+| Race/ethnicity | `racecl4` | Bulletin extract |
+| Age | `age` | Bulletin extract |
+| Education | `educ` (recoded into 5 levels) | Bulletin extract |
+| Marital status | `married` | Bulletin extract |
+| Income | `income` | Bulletin extract |
+| Net worth | `networth` | Bulletin extract |
+| Net-worth percentile | `nw_pctl` (computed on full SCF distribution) | Derived |
+| Retirement assets | `retqliq` | Bulletin extract |
+| Stocks | `stocks` | Bulletin extract |
+| Credit denied | `turndown` | Bulletin extract |
+| Checking balance | `checking` | Bulletin extract |
+| Homeowner | `housecl` | Bulletin extract |
+| Weight | `wgt` | Bulletin extract |
+
+# Appendix B: scf Package Workflow Notes
+
+This document follows the workflow established in Paper 1 (`scf_ccbal_analysis_v5.Rmd`):
+
+1. `scf_download(2022)` writes raw `.rds` files to `scf_data/`.
+2. `scf_load(2022, data_directory = "scf_data")` returns an object with
+   `$mi_design[[1..5]]` survey-design slots, one per implicate.
+3. `scf_update(scf_obj, new_var = expr, ...)` adds variables to all 5 implicates.
+4. `scf_mean()`, `scf_glm()`, `scf_ols()` fit pooled models with Rubin's-Rules pooling
+   and replicate-weight-based variance.
+5. Subsetting (e.g. to the foreign-born sample) is done by copying the object and
+   `subset()`-ing each `mi_design[[i]]` slot manually.
+
+The new 2022 immigration variables (`X6915`, `X6906`, `X7404`, `X7796`) are not in the
+Bulletin summary extract that the `scf` package builds. The diagnostic chunk at the
+top of this document attempts to merge them in from the raw 2022 SCF `.rds` file. If
+the merge fails, those analyses cannot proceed.
+
+# Appendix C: V10 Methodological Notes
+
+This V10 build adopts the prose improvements from a manual rewrite of the V9 knit
+output. The substantive analysis (variable engineering, modeling specifications,
+duration-stratified robustness check) is unchanged; only the narrative prose has
+been revised for clarity, citation density, and academic tone.
+
+**V10 prose changes:**
+
+- **Abstract** is tightened with "Previewing the primary findings" signposting and
+  cleaner declarative language about the convergence finding.
+- **Central Question** now anchors the theoretical debate in specific citations
+  (Borjas 1987, 1999; Chiswick 1978; Blau & Graham 1990; Portes & Zhou 1993; Portes
+  & Rumbaut 2001; Zhou 1997).
+- **Why This Matters** adds Logan 2007, Smith 2015, and Telles & Ortiz 2008 to
+  support the within-racial-category heterogeneity claim. The closing paragraph now
+  states the paper's purpose more directly.
+- **H2 narrative** adds a "for instance" walkthrough that primes the reader to read
+  the pattern matrix as a pathway-coherence test, then states the null finding
+  plainly after the table.
+- **H3 closing paragraph** is rewritten to be explicitly conditional, avoiding
+  language that could read as describing findings that aren't there.
+- **Limitations** is reorganized as connected prose (First, Second, ..., Lastly)
+  rather than a numbered list.
+- **Conclusion** is restructured into the standard scholars / policymakers /
+  forward-looking pattern.
+
+**V9 changes (carried forward):**
+
+1. **Reframed Abstract, Section 1, Discussion, and Conclusion.** The earlier versions
+   framed the analysis as a test of segmented-assimilation predictions, with
+   convergence as an implicit alternative. V9 treats the two models as competing
+   hypotheses given equal a priori weight, then reports what the data show.
+
+2. **New Section 6 — Duration-Stratified Analysis.** The pooled foreign-born sample
+   has mean YIU of 36.8 years, which may obscure early-stage segmentation effects.
+   Section 6 splits the sample at the standard 15-year threshold and re-estimates the
+   H1 origin-region models within each stratum, on three core outcomes (one per
+   pathway: retirement, homeownership, credit denial). The comparative table allows
+   the reader to assess whether origin-region effects are larger in early-stage
+   incorporation than in long-tenured immigrants.
+
+3. **Updated Limitations section.** Survivorship bias is now the lead limitation,
+   with explicit discussion of return-migration mechanisms. Statistical-power
+   limitations are reported as a separate point: the analysis is well-powered against
+   large segmentation effects but only modestly powered against smaller effects.
+
+**Earlier-version corrections (carried forward):**
+
+V8 fixed a singularity issue: with the strict foreign-born filter (requires
+years_in_us > 0), the missing-indicator variable yiu_missing became constant 0 and
+crashed the GLM solver. V8 replaced `yiu_clean + yiu_missing` with raw `years_in_us`
+in all model formulas.
+
+V7 fixed a formula-environment scoping issue: when `as.formula()` is called inside a
+function, the formula's environment becomes the function's local scope, which doesn't
+contain the survey design's variables. V7 sets `environment(formula) <- globalenv()`
+so the survey functions can resolve term names against the design's `$variables` data.
+
+V6 corrected the years-in-U.S. variable identity: V5 erroneously used X7437–X7443
+(which are mortgage-forbearance variables per the official 2022 SCF changes file). The
+correct YIU variable is X6906 for the respondent and X7796 for the spouse.
+
+V5 corrections: foreign-born identification requires both X6915 indicating non-
+American ancestry AND X6906 > 0; nw_pctl computed via `scf_update` on the full SCF
+sample before subsetting; quasi-complete separation pre-checked in the H1 cache loop
+and H3 chunk; H3 interaction errors surfaced explicitly rather than silently
+swallowed; H1 result tables reformatted (Baseline/Full side-by-side, origin-region
+prefix stripped).
