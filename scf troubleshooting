@@ -1,0 +1,86 @@
+The diagnostic block you included is doing exactly what it's supposed to do, and it points directly to the root of the problem.
+
+Because the simple inline formula (own_home ~ origin_region) succeeded, but your complex models failed across the board, the issue isn't the subsetting or the survey design. It is a singularity (perfect collinearity) caused by one of your control variables crashing the regression algorithm.
+
+The Culprit: yiu_missing
+In your V7 variable engineering chunk, you updated the foreign_born definition to strictly require a valid number of years lived in the U.S.:
+foreign_born = as.integer(!is.na(years_in_us) & years_in_us > 0 ...)
+
+By doing this, you guarantee that every single respondent who makes it into your analytic sample has a valid years_in_us value. Consequently, there are zero missing values for this variable in your subset.
+
+Because nobody is missing this data, your yiu_missing indicator variable is a constant 0 for the entire scf_fb subset. When you pass a constant variable into a GLM or OLS regression, the math cannot compute the variance, causing the model to throw the "Too few successful implicate-level models to pool" error and halt.
+
+The Fix
+Since your sample is now strictly filtered to those with valid duration data, you no longer need the missing-indicator method. You can simply use the raw years_in_us variable in your model formulas.
+
+Here are the two chunks you need to update to get everything compiling correctly.
+
+1. Update h1-model-helper
+Remove the missing-indicator variables from your baseline and full specification strings, replacing them with years_in_us.
+
+R
+  # 1. Define the nested specifications
+  baseline_rhs <- "origin_region + years_in_us + age_centered"
+  full_rhs     <- "origin_region + years_in_us + age_centered + educ_cat + currently_married + log_income"
+2. Update h3-interaction
+You will need to update the formula string here as well, and also update the filtering logic lower down in the chunk so it properly searches for years_in_us instead of yiu_clean when printing the table.
+
+Replace the int_rhs definition near the top of the chunk:
+
+R
+    int_rhs <- "origin_region * years_in_us + age_centered + educ_cat + currently_married + log_income"
+And then replace the extraction and formatting logic near the bottom of the chunk:
+
+R
+    # Find both the YIU main effect and all origin × YIU interaction terms
+    yiu_main <- res %>% filter(term == "years_in_us")
+    int_terms <- res %>%
+      filter(grepl("origin_region.*:years_in_us|years_in_us:origin_region", term))
+
+    if (nrow(int_terms) == 0) {
+      cat("*No interaction terms found.*\n\n")
+      next
+    }
+
+    # Format compactly
+    if (fam == "binomial") {
+      display_main <- yiu_main %>%
+        mutate(Term = "Years in U.S. (Latin American reference slope)",
+               Estimate = sprintf("OR = %.3f", exp(estimate)),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   exp(estimate - 1.96 * std.error),
+                                   exp(estimate + 1.96 * std.error)),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+
+      display_int <- int_terms %>%
+        mutate(Term = paste(gsub("origin_region|:years_in_us|years_in_us:", "", term), "× YIU"),
+               Estimate = sprintf("OR = %.3f", exp(estimate)),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   exp(estimate - 1.96 * std.error),
+                                   exp(estimate + 1.96 * std.error)),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+    } else {
+      display_main <- yiu_main %>%
+        mutate(Term = "Years in U.S. (Latin American reference slope)",
+               Estimate = sprintf("β = %.3f", estimate),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   estimate - 1.96 * std.error,
+                                   estimate + 1.96 * std.error),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+
+      display_int <- int_terms %>%
+        mutate(Term = paste(gsub("origin_region|:years_in_us|years_in_us:", "", term), "× YIU"),
+               Estimate = sprintf("β = %.3f", estimate),
+               `95% CI` = sprintf("[%.3f, %.3f]",
+                                   estimate - 1.96 * std.error,
+                                   estimate + 1.96 * std.error),
+               `p-value` = formatC(p.value, format = "g", digits = 2)) %>%
+        select(Term, Estimate, `95% CI`, `p-value`)
+    }
+Critical Final Step: Clear the Cache!
+Because your h1-fit-all-models-once chunk uses cache=TRUE, RStudio has memorized these failed model outputs. If you just change the code and hit Knit, it will likely load the broken models from the cache and fail again.
+
+Before running the updated script, delete the scf_segmented_assimilation_v7_cache folder in your file directory, or use the "Clear Knitr Cache" button in RStudio. This forces the script to run the newly updated formulas from scratch.
