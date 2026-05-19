@@ -137,3 +137,15 @@ rates = (birds.groupby('Region')
 
 winner = rates.idxmax()
 print(f'{winner} ({rates.max():.4f})')   # Australia (0.6254)
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Filter to Stormy weather AND Poor tracking quality
+subset = df[(df['Weather_Condition'] == 'Stormy') & (df['Tracking_Quality'] == 'Poor')]
+
+# Success rate within that subset
+pct = (subset['Migration_Success'] == 'Successful').mean() * 100
+print(f'{pct:.2f}%')   # 52.67%
