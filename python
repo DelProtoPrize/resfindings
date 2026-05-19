@@ -23,3 +23,16 @@ print(f"\nMissing values in target: {df['Migration_Success'].isna().sum()}")
 
 # 6. Check the dtype (confirms it's categorical, not numeric)
 print(f"\nDtype: {df['Migration_Success'].dtype}")
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Group by species, take top 5 speeds per group, average them, sort descending
+result = (df.groupby('Species')['Speed_kmph']
+            .apply(lambda x: x.nlargest(5).mean())
+            .sort_values(ascending=False))
+
+print(result)
+print(f'\nWinner: {result.idxmax()} with {result.max():.2f} kmph')
