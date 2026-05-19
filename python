@@ -64,3 +64,17 @@ df['time_minutes'] = (distance_km / df['Speed_kmph']) * 60
 # Find the minimum time
 fastest_time = df['time_minutes'].min()
 print(f'{fastest_time:.1f}')
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+count = ((df['Species'] == 'Stork') & (df['Observation_Quality'] == 'Low')).sum()
+print(count)  # 501
+
+# Standardize capitalization and trim whitespace
+df['Observation_Quality'] = df['Observation_Quality'].str.strip().str.title()
+
+# Now the count
+count = ((df['Species'] == 'Stork') & (df['Observation_Quality'] == 'Low')).sum()
+print(count)  # 502
