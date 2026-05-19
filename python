@@ -1,0 +1,25 @@
+import pandas as pd
+
+# Load the dataset
+df = pd.read_csv('bird_tracking_1.csv')
+
+# 1. Check the unique values in the target
+print("Unique values in Migration_Success:")
+print(df['Migration_Success'].unique())
+
+# 2. Count how many distinct classes there are
+print(f"\nNumber of unique classes: {df['Migration_Success'].nunique()}")
+
+# 3. Check the class distribution (balance)
+print("\nValue counts:")
+print(df['Migration_Success'].value_counts())
+
+# 4. Check class balance as proportions
+print("\nClass proportions:")
+print(df['Migration_Success'].value_counts(normalize=True))
+
+# 5. Check for missing values
+print(f"\nMissing values in target: {df['Migration_Success'].isna().sum()}")
+
+# 6. Check the dtype (confirms it's categorical, not numeric)
+print(f"\nDtype: {df['Migration_Success'].dtype}")
