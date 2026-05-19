@@ -36,3 +36,16 @@ result = (df.groupby('Species')['Speed_kmph']
 
 print(result)
 print(f'\nWinner: {result.idxmax()} with {result.max():.2f} kmph')
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Filter to Cranes only
+cranes = df[df['Species'] == 'Crane']
+
+# Success rate = proportion of 'Successful' migrations × 100
+success_rate = (cranes['Migration_Success'] == 'Successful').mean() * 100
+
+print(f'Migration success rate for Cranes: {success_rate:.1f}%')
