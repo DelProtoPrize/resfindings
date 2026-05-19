@@ -49,3 +49,18 @@ cranes = df[df['Species'] == 'Crane']
 success_rate = (cranes['Migration_Success'] == 'Successful').mean() * 100
 
 print(f'Migration success rate for Cranes: {success_rate:.1f}%')
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Convert 2100 miles to km using the prescribed conversion (1 mile = 1.6 km)
+distance_km = 2100 * 1.6   # = 3360.0 km
+
+# Time (minutes) = (distance / speed) * 60
+df['time_minutes'] = (distance_km / df['Speed_kmph']) * 60
+
+# Find the minimum time
+fastest_time = df['time_minutes'].min()
+print(f'{fastest_time:.1f}')
