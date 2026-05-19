@@ -78,3 +78,28 @@ df['Observation_Quality'] = df['Observation_Quality'].str.strip().str.title()
 # Now the count
 count = ((df['Species'] == 'Stork') & (df['Observation_Quality'] == 'Low')).sum()
 print(count)  # 502
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+storks = df[df['Species'] == 'Stork']
+
+# Show all observation_quality values for Storks, case-sensitive
+print('=== Raw value counts (case-sensitive) ===')
+print(storks['Observation_Quality'].value_counts())
+print()
+
+# Show the offending row(s) explicitly
+print('=== Rows with all-caps LOW ===')
+print(storks[storks['Observation_Quality'] == 'LOW'][['Bird_ID', 'Species', 'Observation_Quality']])
+print()
+
+# Side-by-side strict vs cleaned counts
+strict = ((df['Species'] == 'Stork') & (df['Observation_Quality'] == 'Low')).sum()
+cleaned = ((df['Species'] == 'Stork') & (df['Observation_Quality'].str.lower() == 'low')).sum()
+
+print('=== Final comparison ===')
+print(f'Strict ("Low" only):           {strict}')
+print(f'Cleaned ("Low" + "LOW"):       {cleaned}')
+print(f'Difference (data quality bug):  {cleaned - strict}')
