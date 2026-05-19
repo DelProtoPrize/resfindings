@@ -103,3 +103,21 @@ print('=== Final comparison ===')
 print(f'Strict ("Low" only):           {strict}')
 print(f'Cleaned ("Low" + "LOW"):       {cleaned}')
 print(f'Difference (data quality bug):  {cleaned - strict}')
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Filter to Lost Signal interruptions
+lost_signal = df[df['Interrupted_Reason'] == 'Lost Signal']
+
+# Group by Habitat + Weather, count, sort
+combo_counts = (lost_signal
+                .groupby(['Habitat', 'Weather_Condition'])
+                .size()
+                .sort_values(ascending=False))
+
+# Get the top combo
+habitat, weather = combo_counts.idxmax()
+print(f'{habitat} + {weather}')   # Forest + Windy
