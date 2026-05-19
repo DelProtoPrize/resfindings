@@ -121,3 +121,19 @@ combo_counts = (lost_signal
 # Get the top combo
 habitat, weather = combo_counts.idxmax()
 print(f'{habitat} + {weather}')   # Forest + Windy
+
+
+import pandas as pd
+
+df = pd.read_csv('bird_tracking_1.csv')
+
+# Filter to birds with at least 1 rest stop
+birds = df[df['Rest_Stops'] >= 1]
+
+# Rate = sum of predator sightings / sum of rest stops, by region
+rates = (birds.groupby('Region')
+              .apply(lambda g: g['Predator_Sightings'].sum() / g['Rest_Stops'].sum())
+              .sort_values(ascending=False))
+
+winner = rates.idxmax()
+print(f'{winner} ({rates.max():.4f})')   # Australia (0.6254)
