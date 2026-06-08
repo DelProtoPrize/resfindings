@@ -377,10 +377,10 @@ def normalize_market_values(
     the Tableau semantic layer. Unmatched DP rows are logged to unmatched_players.csv.
     """
     # ---- PRIMARY: DP FantasyPros ECR -> sleeper_id via crosswalk ----
-    dp_mapped = dp.merge(
-        crosswalk[["fantasypros_id", "sleeper_id"]].dropna(),
-        on="fantasypros_id", how="left",
-    )
+    # Dedupe the mapping: db_playerids can list a player across multiple seasons,
+    # which would otherwise fan out DP rows on the merge.
+    xwalk = crosswalk[["fantasypros_id", "sleeper_id"]].dropna().drop_duplicates("fantasypros_id")
+    dp_mapped = dp.merge(xwalk, on="fantasypros_id", how="left")
 
     # Fallback: the DynastyProcess crosswalk lags for brand-new rookies, so their
     # sleeper_id is blank right after a rookie draft. Recover those by matching
@@ -441,6 +441,10 @@ def normalize_market_values(
         path = DATA_DIR / "unmatched_players.csv"
         unmatched_dp.to_csv(path, index=False)
         log.warning("Unmatched DP players: %s -> %s", len(unmatched_dp), path)
+
+    # One row per asset. Name+position fallback can occasionally resolve two
+    # source rows to the same player, so enforce uniqueness on sleeper_id here.
+    merged = merged.drop_duplicates(subset=["sleeper_id"], keep="first")
 
     # Picks come from whichever FC format we pulled (prefer SF if present)
     fc_src = fc_by_format.get(2) if 2 in fc_by_format else next(iter(fc_by_format.values()))
@@ -509,29 +513,39 @@ def build_frames(
         for tp in rows
     ]) if traded_picks else pd.DataFrame()
 
-    # Fact: one row per (snapshot_date, league, roster, player)
-    mv = market.set_index("sleeper_id")
+    # Fact: one row per (snapshot_date, league, roster, player).
+    # Use a dict keyed by sleeper_id (deduped) so a lookup always returns one
+    # record — never a multi-row Series — regardless of duplicate market rows.
+    mv = (market.drop_duplicates(subset=["sleeper_id"], keep="first")
+                .set_index("sleeper_id")
+                .to_dict("index"))
+
+    def val(row: dict | None, col: str):
+        if not row:
+            return None
+        v = row.get(col)
+        return None if v is None or pd.isna(v) else v
+
     fact_rows = []
     for lg, rs in rosters_by_league.items():
         for r in rs:
             rid = r["roster_id"]
             for pid in (r.get("players") or []):
-                row = mv.loc[str(pid)] if str(pid) in mv.index else None
-                g = (lambda c: None) if row is None else (lambda c: (None if pd.isna(row.get(c)) else row.get(c)))
+                row = mv.get(str(pid))
                 fact_rows.append({
                     "snapshot_date": SNAPSHOT_DATE,
                     "league_id": lg,
                     "roster_id": rid,
                     "player_id": str(pid),
                     # PRIMARY: FantasyPros ECR (DynastyProcess)
-                    "fp_value_1qb": g("fp_value_1qb"),
-                    "fp_value_2qb": g("fp_value_2qb"),
-                    "fp_ecr_2qb": g("fp_ecr_2qb"),
+                    "fp_value_1qb": val(row, "fp_value_1qb"),
+                    "fp_value_2qb": val(row, "fp_value_2qb"),
+                    "fp_ecr_2qb": val(row, "fp_ecr_2qb"),
                     # SECONDARY: FantasyCalc cross-check (per format)
-                    "fc_value_1qb": g("fc_value_1qb"),
-                    "fc_value_2qb": g("fc_value_2qb"),
-                    "sleeper_adp_value": g("fc_adp"),
-                    "fc_trend_30day": g("fc_trend_30day"),
+                    "fc_value_1qb": val(row, "fc_value_1qb"),
+                    "fc_value_2qb": val(row, "fc_value_2qb"),
+                    "sleeper_adp_value": val(row, "fc_adp"),
+                    "fc_trend_30day": val(row, "fc_trend_30day"),
                 })
     f.fact_roster_value = pd.DataFrame(fact_rows)
     return f
@@ -797,28 +811,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-2026-06-08 17:44:05,936 | INFO    | Crosswalk fallback recovered 112 player(s) by name+position (likely rookies)
-2026-06-08 17:44:05,955 | WARNING | Unmatched DP players: 2 -> data\unmatched_players.csv
-2026-06-08 17:44:05,958 | INFO    | Market table: 701 assets | FantasyPros (primary) coverage 100.0%
-Traceback (most recent call last):
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 799, in <module>
-    main()
-    ~~~~^^
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 792, in main
-    run(dry_run=args.dry_run)
-    ~~~^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 771, in run
-    frames = build_frames(leagues_meta, managers, rosters_by_league, market, player_db, all_traded_picks)
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 527, in build_frames
-    "fp_value_1qb": g("fp_value_1qb"),
-                    ~^^^^^^^^^^^^^^^^
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 520, in <lambda>
-    g = (lambda c: None) if row is None else (lambda c: (None if pd.isna(row.get(c)) else row.get(c)))
-                                                                 ~~~~~~~^^^^^^^^^^^^
-  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\core\generic.py", line 1513, in __bool__
-    raise ValueError(
-    ...<2 lines>...
-    )
-ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
