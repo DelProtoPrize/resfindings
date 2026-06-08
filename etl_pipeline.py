@@ -36,6 +36,8 @@ Configuration (environment / .env):
     DATABASE_URL=                             # optional; defaults to sqlite:///<DATA_DIR>/dynasty.db
     PLAYER_CACHE_TTL_HOURS=24
     DATA_DIR=./data
+    EXPORT_CSV=true                           # also write CSV extracts for Power BI
+    EXTRACT_DIR=                              # defaults to <DATA_DIR>/powerbi
 
 Run:
     python etl_pipeline.py            # full run
@@ -545,7 +547,10 @@ CREATE TABLE IF NOT EXISTS dim_draft_picks (
     round              INT,
     original_owner_id  INT,
     current_owner_id   INT,
-    previous_owner_id  INT
+    previous_owner_id  INT,
+    pick_value_1qb     NUMERIC,
+    pick_value_2qb     NUMERIC,
+    pick_value_tier    TEXT
 );
 CREATE TABLE IF NOT EXISTS fact_roster_historical_value (
     snapshot_date      DATE    NOT NULL,
@@ -563,6 +568,38 @@ CREATE TABLE IF NOT EXISTS fact_roster_historical_value (
 );
 CREATE INDEX IF NOT EXISTS ix_fact_player ON fact_roster_historical_value(player_id);
 CREATE INDEX IF NOT EXISTS ix_fact_league_date ON fact_roster_historical_value(league_id, snapshot_date);
+
+-- Format-resolution views (canonical definitions documented in schema.sql).
+-- Created here too so the Power BI CSV extracts always include them.
+CREATE VIEW IF NOT EXISTS v_player_market AS
+SELECT f.snapshot_date, f.league_id, f.roster_id, f.player_id,
+       p.player_name, p.position, p.age, p.nfl_team,
+       l.is_superflex, l.te_premium_value,
+       CASE WHEN l.is_superflex = 1 THEN f.fp_value_2qb ELSE f.fp_value_1qb END AS fp_market_value,
+       CASE WHEN l.is_superflex = 1 THEN f.fc_value_2qb ELSE f.fc_value_1qb END AS fc_market_value,
+       f.fp_ecr_2qb, f.fc_trend_30day,
+       (CASE WHEN l.is_superflex = 1 THEN f.fp_value_2qb ELSE f.fp_value_1qb END)
+     - (CASE WHEN l.is_superflex = 1 THEN f.fc_value_2qb ELSE f.fc_value_1qb END) AS arb_delta_fp_minus_fc
+FROM fact_roster_historical_value f
+JOIN dim_leagues l ON l.league_id = f.league_id
+LEFT JOIN dim_players p ON p.player_id = f.player_id;
+
+CREATE VIEW IF NOT EXISTS v_roster_assets AS
+SELECT f.snapshot_date, f.league_id, f.roster_id,
+       'PLAYER' AS asset_type, f.player_id AS asset_id,
+       p.player_name AS asset_name, p.position AS position,
+       CASE WHEN l.is_superflex = 1 THEN f.fp_value_2qb ELSE f.fp_value_1qb END AS fp_market_value
+FROM fact_roster_historical_value f
+JOIN dim_leagues l ON l.league_id = f.league_id
+LEFT JOIN dim_players p ON p.player_id = f.player_id
+UNION ALL
+SELECT (SELECT MAX(snapshot_date) FROM fact_roster_historical_value) AS snapshot_date,
+       dp.league_id, dp.current_owner_id AS roster_id,
+       'PICK' AS asset_type, dp.pick_id AS asset_id,
+       dp.year || ' R' || dp.round AS asset_name, 'PICK' AS position,
+       CASE WHEN l.is_superflex = 1 THEN dp.pick_value_2qb ELSE dp.pick_value_1qb END AS fp_market_value
+FROM dim_draft_picks dp
+JOIN dim_leagues l ON l.league_id = dp.league_id;
 """
 
 
@@ -613,9 +650,32 @@ def load(engine: Engine, frames: Frames) -> None:
            ["snapshot_date", "league_id", "roster_id", "player_id"])
 
 
-# --------------------------------------------------------------------------- #
-# Orchestration
-# --------------------------------------------------------------------------- #
+def export_extracts(engine: Engine, out_dir: Path) -> None:
+    """Write driver-free CSV extracts for Power BI (which has no native SQLite
+    connector). Adds a single-column `roster_key` (league_id-roster_id) because
+    Power BI relationships are single-column only — your manager grain is composite.
+    Power BI then connects via Get Data > Folder and loads this directory."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rk = "league_id || '-' || roster_id AS roster_key"
+    exports = {
+        "dim_leagues": "SELECT * FROM dim_leagues",
+        "dim_players": "SELECT * FROM dim_players",
+        "dim_managers": f"SELECT *, {rk} FROM dim_managers",
+        "dim_draft_picks": "SELECT *, league_id || '-' || current_owner_id AS roster_key FROM dim_draft_picks",
+        "fact_roster_historical_value": f"SELECT *, {rk} FROM fact_roster_historical_value",
+        "v_player_market": f"SELECT *, {rk} FROM v_player_market",
+        "v_roster_assets": f"SELECT *, {rk} FROM v_roster_assets",
+    }
+    for name, q in exports.items():
+        try:
+            df = pd.read_sql_query(q, engine)
+            df.to_csv(out_dir / f"{name}.csv", index=False, encoding="utf-8")
+            log.info("Extract: %-30s %s rows -> %s.csv", name, len(df), name)
+        except Exception as exc:  # a missing view shouldn't abort the whole export
+            log.warning("Extract %s skipped: %s", name, exc)
+    log.info("Power BI extracts written to %s", out_dir)
+
+
 
 def run(dry_run: bool = False) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -681,6 +741,9 @@ def run(dry_run: bool = False) -> None:
     engine = get_engine()
     load(engine, frames)
     log.info("ETL complete for snapshot_date=%s", SNAPSHOT_DATE)
+
+    if os.getenv("EXPORT_CSV", "true").lower() == "true":
+        export_extracts(engine, Path(os.getenv("EXTRACT_DIR", str(DATA_DIR / "powerbi"))))
 
 
 def main() -> None:
