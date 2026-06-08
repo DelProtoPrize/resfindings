@@ -52,8 +52,10 @@ import io
 import logging
 import os
 import random
+import re
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -308,7 +310,7 @@ def fetch_dynastyprocess_values() -> pd.DataFrame:
     df = pd.read_csv(io.StringIO(txt))
     df = df.rename(columns={"fp_id": "fantasypros_id"})
     df["fantasypros_id"] = df["fantasypros_id"].astype(str)
-    return df[["fantasypros_id", "player", "value_1qb", "value_2qb", "ecr_2qb", "scrape_date"]]
+    return df[["fantasypros_id", "player", "pos", "value_1qb", "value_2qb", "ecr_2qb", "scrape_date"]]
 
 
 def fetch_fantasycalc(num_qbs: int, num_teams: int, ppr: float) -> pd.DataFrame:
@@ -340,6 +342,20 @@ def fetch_fantasycalc(num_qbs: int, num_teams: int, ppr: float) -> pd.DataFrame:
 # Normalization / crosswalk join
 # --------------------------------------------------------------------------- #
 
+_SUFFIXES = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b")
+
+
+def _norm_name(name: str | None) -> str:
+    """Normalize a player name for fuzzy identity matching: strip accents,
+    punctuation, and generational suffixes; lowercase; collapse whitespace."""
+    if not isinstance(name, str):
+        return ""
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    s = _SUFFIXES.sub("", s.lower())
+    s = re.sub(r"[^a-z ]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def normalize_market_values(
     fc_by_format: dict[int, pd.DataFrame],
     dp: pd.DataFrame,
@@ -365,6 +381,28 @@ def normalize_market_values(
         crosswalk[["fantasypros_id", "sleeper_id"]].dropna(),
         on="fantasypros_id", how="left",
     )
+
+    # Fallback: the DynastyProcess crosswalk lags for brand-new rookies, so their
+    # sleeper_id is blank right after a rookie draft. Recover those by matching
+    # normalized name + position against the authoritative Sleeper player DB —
+    # this is what keeps freshly-drafted rookies from being valued at NULL.
+    miss = dp_mapped["sleeper_id"].isna()
+    if miss.any():
+        name_pos_lut: dict[tuple[str, str], str] = {}
+        for pid, rec in player_db.items():
+            nm = _norm_name(rec.get("full_name"))
+            pos = rec.get("position")
+            if nm and pos:
+                name_pos_lut.setdefault((nm, pos), str(pid))
+        recovered = [
+            name_pos_lut.get((_norm_name(n), p))
+            for n, p in zip(dp_mapped.loc[miss, "player"], dp_mapped.loc[miss, "pos"])
+        ]
+        dp_mapped.loc[miss, "sleeper_id"] = recovered
+        n_rec = sum(x is not None for x in recovered)
+        if n_rec:
+            log.info("Crosswalk fallback recovered %s player(s) by name+position (likely rookies)", n_rec)
+
     unmatched_dp = dp_mapped[dp_mapped["sleeper_id"].isna()][["player", "fantasypros_id"]]
     dp_mapped = dp_mapped.dropna(subset=["sleeper_id"]).copy()
     dp_mapped["sleeper_id"] = dp_mapped["sleeper_id"].astype(str)
