@@ -25,7 +25,7 @@ Sources (all verified reachable June 2026):
     DynastyProcess crosswalk ..... db_playerids.csv (sleeper_id <-> ktc_id <-> fp_id)
 
 Requirements (see requirements.txt):
-    requests, pandas, SQLAlchemy>=2.0, psycopg2-binary, python-dotenv, tenacity
+    requests, pandas, SQLAlchemy>=2.0, python-dotenv
 
 Configuration (environment / .env):
     SLEEPER_USERNAME=your_sleeper_handle      # OR set SLEEPER_USER_ID directly
@@ -33,7 +33,7 @@ Configuration (environment / .env):
     SLEEPER_SEASON=2026
     LEAGUE_ID_FILTER=                         # optional CSV of league_ids to limit to
     BACKFILL_PREVIOUS_SEASONS=true            # walk previous_league_id for history
-    DATABASE_URL=postgresql+psycopg2://user:pass@localhost:5432/dynasty
+    DATABASE_URL=                             # optional; defaults to sqlite:///<DATA_DIR>/dynasty.db
     PLAYER_CACHE_TTL_HOURS=24
     DATA_DIR=./data
 
@@ -495,7 +495,9 @@ def traded_picks_by_league(rows: list[dict]) -> dict[str, list[dict]]:
 
 
 # --------------------------------------------------------------------------- #
-# Load: PostgreSQL with idempotent upsert
+# Load: SQLite (default) via SQLAlchemy, idempotent upsert.
+# SQLite (>=3.24) and PostgreSQL share the INSERT ... ON CONFLICT DO UPDATE
+# syntax used below, so the loader is portable across both with no code change.
 # --------------------------------------------------------------------------- #
 
 DDL = """
@@ -555,9 +557,13 @@ CREATE INDEX IF NOT EXISTS ix_fact_league_date ON fact_roster_historical_value(l
 
 
 def get_engine() -> Engine:
-    url = os.getenv("DATABASE_URL")
+    """Defaults to a local SQLite file (portable, zero-config). Override with
+    DATABASE_URL for any other SQLAlchemy-supported backend."""
+    url = os.getenv("DATABASE_URL", "").strip()
     if not url:
-        raise SystemExit("Set DATABASE_URL (e.g. postgresql+psycopg2://user:pass@host:5432/dynasty)")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        url = f"sqlite:///{(DATA_DIR / 'dynasty.db').as_posix()}"
+        log.info("DATABASE_URL not set — using %s", url)
     return create_engine(url, pool_pre_ping=True)
 
 
@@ -577,6 +583,7 @@ def upsert(engine: Engine, table: str, df: pd.DataFrame, conflict_cols: list[str
         action = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"
         conn.execute(text(
             f'INSERT INTO {table} ({collist}) SELECT {collist} FROM {staging} '
+            f'WHERE true '  # disambiguates SELECT from the upsert clause in SQLite; valid in PostgreSQL too
             f'ON CONFLICT ({conflict}) {action}'
         ))
         conn.execute(text(f"DROP TABLE IF EXISTS {staging}"))
