@@ -63,8 +63,18 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
+    from dotenv import load_dotenv, find_dotenv
+    # Windows editors/PowerShell often save .env as UTF-16 or with a BOM, which
+    # the default UTF-8 reader can't decode. Detect the BOM and read accordingly.
+    _env_path = find_dotenv(usecwd=True)
+    _enc = "utf-8"
+    if _env_path:
+        _bom = open(_env_path, "rb").read(3)
+        if _bom[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            _enc = "utf-16"
+        elif _bom == b"\xef\xbb\xbf":
+            _enc = "utf-8-sig"
+    load_dotenv(_env_path or None, encoding=_enc)
 except ImportError:  # dotenv is optional
     pass
 
