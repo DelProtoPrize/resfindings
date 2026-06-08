@@ -797,3 +797,28 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+2026-06-08 17:44:05,936 | INFO    | Crosswalk fallback recovered 112 player(s) by name+position (likely rookies)
+2026-06-08 17:44:05,955 | WARNING | Unmatched DP players: 2 -> data\unmatched_players.csv
+2026-06-08 17:44:05,958 | INFO    | Market table: 701 assets | FantasyPros (primary) coverage 100.0%
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 799, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 792, in main
+    run(dry_run=args.dry_run)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 771, in run
+    frames = build_frames(leagues_meta, managers, rosters_by_league, market, player_db, all_traded_picks)
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 527, in build_frames
+    "fp_value_1qb": g("fp_value_1qb"),
+                    ~^^^^^^^^^^^^^^^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\etl_pipeline.py", line 520, in <lambda>
+    g = (lambda c: None) if row is None else (lambda c: (None if pd.isna(row.get(c)) else row.get(c)))
+                                                                 ~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\core\generic.py", line 1513, in __bool__
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
