@@ -57,6 +57,51 @@ async function render(leagueId) {
     const tr = e.target.closest('tr[data-roster]');
     if (tr) drillRoster(Number(tr.dataset.roster));
   });
+
+  renderTriangulation(leagueId);
+}
+
+// Win-now (VBD, production over replacement) vs dynasty (FP market price). Each point
+// is a player; the dotted line is parity. Top-left = produces now but the dynasty
+// market discounts him (aging vets — sell-high). Bottom-right = the market pays for
+// value not yet in the box score (youth, injury return, or SF-QB scarcity).
+async function renderTriangulation(leagueId) {
+  const rows = await api(`/leagues/${leagueId}/value`);
+  const panel = document.getElementById('triPanel');
+  if (!rows.length) { panel.style.display = 'none'; return; }  // VBD layer not built yet
+  panel.style.display = 'block';
+
+  const colors = { QB: '#4f8cff', RB: '#5fd08a', WR: '#ffb454', TE: '#c98bff' };
+  const maxv = Math.max(1, ...rows.map((d) => Math.max(d.fp_market_value || 0, d.vbd_value || 0)));
+  const traces = ['QB', 'RB', 'WR', 'TE'].map((pos) => {
+    const pr = rows.filter((d) => d.position === pos);
+    return {
+      type: 'scatter', mode: 'markers', name: pos,
+      x: pr.map((d) => d.fp_market_value),
+      y: pr.map((d) => d.vbd_value),
+      text: pr.map((d) => `${d.player_name}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
+      marker: { color: colors[pos], size: 9, opacity: 0.82, line: { color: '#171c23', width: 1 } },
+      hovertemplate: '%{text}<br>FP %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
+    };
+  });
+  traces.push({
+    type: 'scatter', mode: 'lines', x: [0, maxv], y: [0, maxv],
+    line: { color: '#3a4350', width: 1, dash: 'dot' }, hoverinfo: 'skip', showlegend: false,
+  });
+
+  Plotly.react('triChart', traces, {
+    margin: { l: 66, r: 20, t: 10, b: 52 },
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: '#e8eef5' },
+    xaxis: { title: 'Dynasty value — FantasyPros', gridcolor: '#232a33', zeroline: false },
+    yaxis: { title: 'Win-now value — VBD (pts over replacement)', gridcolor: '#232a33', zeroline: false },
+    legend: { orientation: 'h', y: 1.1 },
+    annotations: [
+      { x: maxv * 0.04, y: maxv * 0.96, xanchor: 'left', showarrow: false,
+        text: 'produces now · market discounts (sell-high)', font: { size: 10, color: '#8b97a7' } },
+      { x: maxv * 0.96, y: maxv * 0.05, xanchor: 'right', showarrow: false,
+        text: 'market pays ahead of production (youth / injury / SF-QB)', font: { size: 10, color: '#8b97a7' } },
+    ],
+  }, { displayModeBar: false, responsive: true });
 }
 
 async function drillRoster(rosterId) {
@@ -99,6 +144,7 @@ async function drillRoster(rosterId) {
     <table><thead><tr>
       <th>Player</th><th>Pos</th><th class="num">Age</th><th>Team</th>
       <th class="num">FP value</th><th class="num">FC value</th>
+      <th class="num">VBD</th><th class="num">PPG</th>
       <th class="num">Arb Δ</th><th class="num">30d</th>
     </tr></thead><tbody>
       ${assets.map((a) => `<tr>
@@ -108,6 +154,8 @@ async function drillRoster(rosterId) {
         <td>${a.nfl_team || '–'}</td>
         <td class="num">${fmt(a.fp_market_value)}</td>
         <td class="num">${fmt(a.fc_market_value)}</td>
+        <td class="num">${fmt(a.vbd_value)}</td>
+        <td class="num">${a.ppg != null ? Number(a.ppg).toFixed(1) : '–'}</td>
         <td class="num">${arb(a.arb_delta_fp_minus_fc)}</td>
         <td class="num">${a.fc_trend_30day != null ? fmt(Math.round(a.fc_trend_30day)) : '–'}</td>
       </tr>`).join('')}
