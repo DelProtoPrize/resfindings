@@ -237,3 +237,34 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+
+
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\points_model.py", line 47, in <module>
+    load_dotenv()
+    ~~~~~~~~~~~^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 429, in load_dotenv 
+    return dotenv.set_as_environment_variables()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 101, in set_as_environment_variables
+    if not self.dict():
+           ~~~~~~~~~^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 84, in dict
+    resolve_variables(raw_values, override=self.override)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 295, in resolve_variables
+    for name, value in values:
+                       ^^^^^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 93, in parse        
+    for mapping in with_warn_for_invalid_lines(parse_stream(stream)):
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\main.py", line 33, in with_warn_for_invalid_lines
+    for mapping in mappings:
+                   ^^^^^^^^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\parser.py", line 180, in parse_stream
+    reader = Reader(stream)
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\dotenv\parser.py", line 71, in __init__   
+    self.string = stream.read()
+                  ~~~~~~~~~~~^^
+  File "<frozen codecs>", line 325, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
