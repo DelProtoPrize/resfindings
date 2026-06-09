@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import logging
 import os
 import random
@@ -255,6 +256,9 @@ def parse_league_settings(league: dict) -> dict:
         "te_premium_value": te_premium_bonus,
         "ppr": float(scoring.get("rec", 0) or 0),
         "previous_league_id": league.get("previous_league_id"),
+        # Full settings so points_model.py can score each league EXACTLY (TEP, bonuses).
+        "scoring_settings_json": json.dumps(scoring),
+        "roster_positions_json": json.dumps(rp),
     }
 
 
@@ -573,7 +577,9 @@ CREATE TABLE IF NOT EXISTS dim_leagues (
     is_superflex        BOOLEAN,
     te_premium_value    NUMERIC,
     ppr                 NUMERIC,
-    previous_league_id  TEXT
+    previous_league_id  TEXT,
+    scoring_settings_json TEXT,
+    roster_positions_json TEXT
 );
 CREATE TABLE IF NOT EXISTS dim_managers (
     roster_id        INT,
