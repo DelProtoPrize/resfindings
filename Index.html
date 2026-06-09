@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roster Portfolio &amp; Asset Valuation</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root { --bg:#0f1216; --panel:#171c23; --ink:#e8eef5; --muted:#8b97a7; --accent:#4f8cff; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+           font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
+    header { padding:18px 24px; border-bottom:1px solid #232a33; display:flex;
+             gap:16px; align-items:baseline; }
+    h1 { font-size:18px; margin:0; font-weight:650; }
+    select { background:var(--panel); color:var(--ink); border:1px solid #2a323c;
+             border-radius:8px; padding:7px 10px; }
+    main { padding:24px; display:grid; gap:24px; grid-template-columns:1fr; max-width:1100px; }
+    .panel { background:var(--panel); border:1px solid #232a33; border-radius:12px; padding:16px; }
+    .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em;
+                color:var(--muted); margin:0 0 12px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { text-align:left; padding:6px 10px; border-bottom:1px solid #232a33; }
+    th { color:var(--muted); font-weight:600; }
+    td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    tbody tr.clickable { cursor:pointer; }
+    tbody tr.clickable:hover { background:#1e2530; }
+    .pos { font-size:11px; padding:1px 6px; border-radius:4px; background:#2a323c; color:var(--muted); }
+    .summary { display:flex; gap:24px; flex-wrap:wrap; margin-bottom:14px; }
+    .summary .stat { font-size:13px; color:var(--muted); }
+    .summary .stat b { display:block; font-size:20px; color:var(--ink); font-variant-numeric:tabular-nums; }
+    .pos-good { color:#5fd08a; } .pos-bad { color:#ff7a7a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Roster Portfolio &amp; Asset Valuation</h1>
+    <select id="league"></select>
+  </header>
+  <main>
+    <section class="panel"><h2>Team Valuation &amp; Concentration</h2><div id="valueChart" style="height:420px"></div></section>
+    <section class="panel"><h2>Diagnostics <span style="font-weight:400;text-transform:none;color:var(--muted)">— click a team to drill in</span></h2><div id="diagTable"></div></section>
+    <section class="panel" id="rosterPanel" style="display:none">
+      <h2 id="rosterTitle">Roster Detail</h2>
+      <div class="summary" id="rosterSummary"></div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start">
+        <div id="posChart" style="height:280px"></div>
+        <div id="rosterTable"></div>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
