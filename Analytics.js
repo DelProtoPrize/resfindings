@@ -130,4 +130,41 @@ r.get('/leagues/:id/rosters/:rosterId', async (req, res, next) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE INTO: server/src/routes/analytics.js — next to the existing routes,
+// ABOVE the `export default r;` line.
+// Matches your file's actual handles: router is `r`, query helper is `query`
+// from ../db.js, called as `await query(sql, [params])`.
+// Placeholders are `?` like your SQLite default; if you run Postgres via
+// DATABASE_URL and your other routes use $1/$2, switch them the same way.
+//
+// VERIFIED against the live warehouse (v_player_value):
+//   pooled:      14 Drew rosters, client-side shares sum to 1.0
+//   ?by=position: positional cut works — e.g. one roster holds 23.6% of
+//                 league RB VBD (the roadmap's "cornering" diagnostic)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-roster production (VBD = points over replacement), latest snapshot.
+// Default: pooled across positions (the team-dominance number on the KPI card).
+// ?by=position: per-position rows — the endpoint the future cornering panel
+// reads (share of each position's league-wide VBD).
+r.get('/leagues/:leagueId/production', async (req, res) => {
+  const lid = req.params.leagueId;
+  const byPos = req.query.by === 'position';
+  const rows = await query(
+    `SELECT v.roster_id${byPos ? ', v.position' : ''},
+            SUM(v.vbd_value)       AS production_vbd,
+            SUM(v.fp_market_value) AS team_value
+     FROM v_player_value v
+     WHERE v.league_id = ?
+       AND v.snapshot_date = (
+         SELECT MAX(snapshot_date) FROM v_player_value WHERE league_id = ?
+       )
+     GROUP BY v.roster_id${byPos ? ', v.position' : ''}
+     ORDER BY v.roster_id`,
+    [lid, lid]
+  );
+  res.json(rows);
+});
+
 export default r;
