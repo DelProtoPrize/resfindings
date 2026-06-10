@@ -284,3 +284,32 @@ if __name__ == "__main__":
     f = build_features(con, as_of="2025-11-04", season=2025, horizon="ros")
     print(f.shape)
     print(f.head(10).to_string())
+
+
+
+PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python dp_archive_etl.py --db data/dynasty.db --since 2019-01-01
+Cloning into '.cache\dp-data'...
+remote: Enumerating objects: 7256, done.
+remote: Counting objects: 100% (6/6), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 7256 (delta 2), reused 6 (delta 2), pack-reused 7250 (from 2)
+Receiving objects: 100% (7256/7256), 810.34 KiB | 6.59 MiB/s, done.
+Resolving deltas: 100% (4651/4651), done.
+340 snapshots in history; 340 new to load.
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\dp_archive_etl.py", line 277, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\dp_archive_etl.py", line 210, in main
+    df = load_snapshot(repo, sha, d)
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\dp_archive_etl.py", line 182, in load_snapshot        
+    raise RuntimeError(
+    ...<2 lines>...
+        f"{pd.read_csv(io.StringIO(raw), nrows=0).columns.tolist()}")
+RuntimeError: Recognized values file at 78f2afdd (2019-04-06) produced 0 rows — alias map is missing a column signature. Raw columns: ['ï»¿mergename', 'pos', 'team', 'age', 'dynoECR', 'dyno2QBECR', 'draft_2QBrookieadp', 'max_dynoECR', 'min_dynoECR', 'max_dyno2QBECR', 'min_dyno2QBECR']
+PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python build_features.py
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\build_features.py", line 283, in <module>
+    con = sqlite3.connect("etl/data/dynasty.db")
+sqlite3.OperationalError: unable to open database file
+PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> 
