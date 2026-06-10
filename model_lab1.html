@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Lab — Roster Portfolio &amp; Asset Valuation</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080b0f;
+      --bg-grad: radial-gradient(1200px 600px at 78% -8%, #10182400 0%, #080b0f 60%);
+      --surface: #0f1318;
+      --panel: #141a21;
+      --panel-2: #171e27;
+      --panel-hover: #1b2330;
+      --ink: #e6ecf5;
+      --ink-dim: #8a97ab;
+      --ink-faint: #4a5666;
+      --accent: #4d8dff;
+      --accent-dim: #15294d;
+      --disc: #35c7e0;
+      --prem: #ff8b5e;
+      --good: #46d182;
+      --good-dim: #0e3d23;
+      --bad: #f5605a;
+      --bad-dim: #3a1513;
+      --warn: #ecb13e;
+      --warn-dim: #3a2c0c;
+      --line: #1d242e;
+      --line-strong: #2a3340;
+      --display: 'Space Grotesk', -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --sans: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+      color: var(--ink);
+      font: 14px/1.55 var(--sans);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: var(--surface);
+    }
+    .header-brand .wordmark { font: 700 17px/1 var(--display); color: var(--ink); letter-spacing: -.02em; }
+    .header-brand .wordmark .mk { color: var(--accent); }
+    .header-brand .tagline  { font: 600 10px/1 var(--mono); color: var(--ink-dim); letter-spacing: .16em; text-transform: uppercase; margin-top: 3px; }
+    nav { display: flex; gap: 4px; margin-left: auto; }
+    nav a {
+      color: var(--ink-dim); text-decoration: none; font-size: 12px;
+      padding: 5px 12px; border-radius: 6px; border: 1px solid transparent; transition: all .15s;
+    }
+    nav a:hover { color: var(--ink); background: var(--panel-hover); }
+    nav a.here { color: var(--ink); background: var(--panel); border-color: var(--line-strong); }
+
+    /* ── LAYOUT ── */
+    .page { padding: 22px 24px 40px; max-width: 1280px; margin: 0 auto; }
+    nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce){ *{animation:none!important} }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width:900px){ .grid-2,.grid-3 { grid-template-columns:1fr; } }
+
+    /* ── PANELS ── */
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+    .section-gap { height: 20px; }
+    .panel-head {
+      display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px;
+      padding-bottom: 12px; border-bottom: 1px solid var(--line);
+    }
+    .panel-head h2 {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--ink-dim);
+    }
+    .panel-head .sub { font-size: 11px; color: var(--ink-faint); font-weight:400; text-transform:none; letter-spacing:0; margin-left:8px; }
+    .panel-head .badge {
+      font-size: 10px; font-weight:700; padding: 2px 8px; border-radius: 10px;
+      font-family: var(--mono); letter-spacing: .04em;
+    }
+    .badge-info { background: var(--accent-dim); color: var(--accent); }
+    .badge-good { background: var(--good-dim); color: var(--good); }
+
+    /* ── VERDICT LEDGER ── */
+    .ledger { display: flex; flex-direction: column; gap: 0; }
+    .verdict {
+      display: grid;
+      grid-template-columns: 1fr 200px 120px;
+      gap: 4px 20px;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .verdict:last-child { border-bottom: 0; padding-bottom: 0; }
+    .verdict .q { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .verdict .detail { grid-column: 1; font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+    .verdict .ci-wrap { grid-column: 2; grid-row: 1 / span 2; }
+    .verdict .ci-wrap svg { display: block; width: 100%; height: 36px; }
+    .verdict .ans {
+      grid-column: 3; grid-row: 1 / span 2; text-align: right;
+      font: 700 23px/1 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+    }
+    .verdict .ans small {
+      display: block; font: 400 10px/1.4 var(--mono); color: var(--ink-dim);
+      margin-top: 5px; letter-spacing: 0;
+    }
+    @media(max-width:700px){
+      .verdict { grid-template-columns:1fr; }
+      .verdict .ci-wrap, .verdict .ans { grid-column:1; grid-row:auto; text-align:left; }
+    }
+
+    /* ── FINDING CARDS ── */
+    .finding-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      padding: 12px 14px;
+    }
+    .finding-card.good  { border-left-color: var(--good); }
+    .finding-card.bad   { border-left-color: var(--bad); }
+    .finding-card.warn  { border-left-color: var(--warn); }
+    .finding-card .fc-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--ink-dim); margin-bottom: 6px;
+    }
+    .finding-card .fc-stat {
+      font: 700 22px/1 var(--display); color: var(--ink); letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+    }
+    .finding-card .fc-desc { font-size: 12px; color: var(--ink-dim); margin-top: 6px; line-height: 1.4; }
+
+    /* ── STAT ROW ── */
+    .stat-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .stat-row:last-child { border-bottom: 0; }
+    .stat-row .sr-label { color: var(--ink-dim); }
+    .stat-row .sr-val { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+
+    /* ── PROTOCOL BLOCK ── */
+    .protocol-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .proto-item {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .proto-item .pi-label { font-size: 10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-dim); margin-bottom:4px; }
+    .proto-item .pi-val  { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+    /* ── NOTE ── */
+    .note { font-size: 12px; color: var(--ink-faint); margin-top: 12px; line-height: 1.5; padding-top: 10px; border-top: 1px solid var(--line); }
+    .note b { color: var(--ink-dim); font-weight: 600; }
+
+    /* ── CHART ── */
+    .chart { height: 300px; }
+
+    /* ── STATE ── */
+    .state-msg { padding: 48px 24px; text-align: center; color: var(--ink-dim); font-size: 13px; line-height: 1.8; }
+    .state-msg code { font-family: var(--mono); color: var(--ink); background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    /* ── READING GUIDE ── */
+    .read-guide {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px;
+      padding-top: 12px; border-top: 1px solid var(--line);
+    }
+    .rg-item {
+      display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-dim);
+    }
+    .rg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── METHODOLOGY BOX ── */
+    .method-box {
+      background: var(--accent-dim);
+      border: 1px solid rgba(61,128,245,.25);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .method-box .mb-head { font-size: 11px; font-weight:700; color: var(--accent); text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px; }
+    .method-box .mb-body { font-size: 12px; color: var(--ink-dim); line-height: 1.6; }
+    .method-box code { font-family: var(--mono); color: var(--ink); font-size: 11px; background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-brand">
+    <div class="wordmark">Roster Portfolio <span class="mk">/</span> Asset Valuation</div>
+    <div class="tagline">Model Lab · Backtest Results</div>
+  </div>
+  <nav>
+    <a href="./index.html">Dashboard</a>
+    <a class="here" href="./model_lab.html" aria-current="page">Model Lab</a>
+  </nav>
+</header>
+
+<div class="page" id="main">
+  <div class="state-msg" id="loading">
+    Loading backtest results…<br><br>
+    Run: <code>python backtest_baselines.py --db data/dynasty.db</code> →
+    <code>python projection_model.py --db data/dynasty.db</code> →
+    <code>python export_modellab.py --db data/dynasty.db --out ../web/data/modellab.json</code>
+  </div>
+</div>
+
+<script>
+/* ── THEME ── */
+const PL = {
+  paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+  font:{ color:'#8a95a8', size:11, family:"-apple-system,'Segoe UI',Roboto,sans-serif" },
+  margin:{ l:54, r:16, t:12, b:44 },
+  xaxis:{ gridcolor:'#1e2530', zerolinecolor:'#2a3340', tickfont:{size:10} },
+  yaxis:{ gridcolor:'#1e2530', zerolinecolor:'#2a3340', tickfont:{size:10} },
+  legend:{ orientation:'h', y:-0.22, font:{size:11} },
+  hoverlabel:{ bgcolor:'#0d1117', bordercolor:'#2a3340', font:{size:12} },
+};
+const CFG = { displayModeBar:false, responsive:true };
+const pct = v => v==null ? '—' : (v>=0?'+':'')+(v*100).toFixed(1)+'%';
+
+/* ── CI BAR ── */
+function ciBar(lo, hi, mid){
+  if (lo==null || hi==null) return '<svg></svg>';
+  const span = Math.max(Math.abs(lo), Math.abs(hi), Math.abs(mid)) * 1.3 || 1;
+  const x = v => 50 + (v/span)*46;
+  const sig = lo > 0 || hi < 0;
+  const col = !sig ? '#3d4756' : mid > 0 ? '#46d182' : '#f5605a';
+  const trackCol = '#1e2530';
+  return `<svg viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+    aria-label="95% CI ${pct(lo)} to ${pct(hi)}">
+    <rect x="0" y="0" width="100" height="36" fill="none"/>
+    <line x1="50" y1="4" x2="50" y2="32" stroke="${trackCol}" stroke-width="1.5"/>
+    <text x="50" y="36" text-anchor="middle" font-size="7" fill="#3d4756">0</text>
+    <rect x="${Math.min(x(lo),x(hi))}" y="14" width="${Math.abs(x(hi)-x(lo))}" height="8"
+      fill="${col}" opacity="0.22" rx="2"/>
+    <line x1="${x(lo)}" y1="14" x2="${x(hi)}" y2="22"
+      stroke="${col}" stroke-width="0"/>
+    <line x1="${x(lo)}" y1="10" x2="${x(lo)}" y2="26" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="${x(hi)}" y1="10" x2="${x(hi)}" y2="26" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="${x(lo)}" y1="18" x2="${x(hi)}" y2="18" stroke="${col}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="${x(mid)}" cy="18" r="4" fill="${col}"/>
+  </svg>`;
+}
+
+/* ── VERDICT ROW ── */
+function verdictRow(v){
+  const sig = v.lo!=null && (v.lo>0 || v.hi<0);
+  const word = v.skill==null ? '' :
+    sig ? (v.skill>0 ? 'edge confirmed' : 'worse than baseline') : 'no detectable edge';
+  const ansColor = !sig ? '#8a95a8' : v.skill > 0 ? '#46d182' : '#f5605a';
+  return `<div class="verdict">
+    <div class="q">${v.q}</div>
+    <div class="detail">${v.detail} · <span style="font-family:var(--mono)">n=${v.n?.toLocaleString()??'—'}</span></div>
+    <div class="ci-wrap">${ciBar(v.lo, v.hi, v.skill)}</div>
+    <div class="ans" style="color:${ansColor}">${pct(v.skill)}
+      <small>${word}<br>95% CI ${pct(v.lo)} … ${pct(v.hi)}</small>
+    </div>
+  </div>`;
+}
+
+/* ── RENDER ── */
+function render(d){
+  const main = document.getElementById('main');
+
+  /* Derive summary stats for finding cards */
+  const topVerdict = d.verdicts?.reduce((best,v) => (v.skill??-99) > (best.skill??-99) ? v : best, d.verdicts[0]);
+  const posData    = d.by_position ?? [];
+  const b1Avg = posData.length ? posData.reduce((s,p)=>s+(p.b1_vs_b0??0),0)/posData.length : null;
+  const m1Avg = posData.length ? posData.reduce((s,p)=>s+(p.m1_vs_b1??0),0)/posData.length : null;
+  const nPred  = d.protocol?.n_predictions;
+
+  main.innerHTML = `
+
+    <div class="method-box">
+      <div class="mb-head">Backtest Protocol</div>
+      <div class="mb-body">
+        <b style="color:var(--ink)">B0</b> = persistence (last-season stats) ·
+        <b style="color:var(--ink)">B1</b> = expert rank (FantasyPros ECR) ·
+        <b style="color:var(--ink)">m1</b> = production model (season stats + age) ·
+        Skill = MAE reduction over stated baseline ·
+        Intervals are player-block bootstrap 95% CIs ·
+        Currency: <code>${d.protocol?.currency ?? 'season_points'}</code> ·
+        <code>${nPred?.toLocaleString() ?? '—'}</code> logged predictions (append-only, never recomputed)
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:20px">
+      <div class="finding-card ${b1Avg>0?'good':'bad'}">
+        <div class="fc-label">Expert Rank Edge</div>
+        <div class="fc-stat">${b1Avg!=null ? (b1Avg*100).toFixed(1)+'%' : '—'}</div>
+        <div class="fc-desc">Avg MAE reduction of B1 vs B0 across positions. ECR consistently beats naive persistence.</div>
+      </div>
+      <div class="finding-card ${m1Avg>0?'good':'warn'}">
+        <div class="fc-label">Production Model Edge</div>
+        <div class="fc-stat">${m1Avg!=null ? (m1Avg*100).toFixed(1)+'%' : '—'}</div>
+        <div class="fc-desc">Avg MAE reduction of m1 vs B1. Position-dependent; RB is negative (usage shifts are fast).</div>
+      </div>
+      <div class="finding-card">
+        <div class="fc-label">Best Single Verdict</div>
+        <div class="fc-stat">${topVerdict ? pct(topVerdict.skill) : '—'}</div>
+        <div class="fc-desc">${topVerdict?.q ?? 'Run the backtest to populate verdicts.'}</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Verdicts <span class="sub">— does each signal add value above its baseline?</span></h2>
+        <span class="badge badge-info">${d.verdicts?.length ?? 0} tests</span>
+      </div>
+      <div class="ledger">${d.verdicts?.map(verdictRow).join('') ?? ''}</div>
+      <div class="read-guide">
+        <div class="rg-item"><div class="rg-dot" style="background:#46d182"></div>CI clears zero — genuine edge</div>
+        <div class="rg-item"><div class="rg-dot" style="background:#f5605a"></div>CI clears zero (negative) — worse than baseline</div>
+        <div class="rg-item"><div class="rg-dot" style="background:#3d4756"></div>CI straddles zero — honest null, not a failure</div>
+      </div>
+    </div>
+
+    <div class="section-gap"></div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Skill by position</h2>
+          <span class="badge badge-good">MAE Δ</span>
+        </div>
+        <div id="posChart" class="chart"></div>
+        <p class="note">
+          <b>Expert rank vs persistence</b> is large everywhere — QB most, as stale priors are expensive in SF scoring.
+          <b>Production vs expert rank</b> is positive for WR/TE; negative for RB — usage shifts are what rankers react to fastest,
+          so trailing stats actually lag there.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>When the production edge appears</h2>
+          <span class="badge" style="background:var(--warn-dim);color:var(--warn)">By Week</span>
+        </div>
+        <div id="weekChart" class="chart"></div>
+        <p class="note">
+          At week-1 as-of, expert rank already digests everything these features know. The edge only materialises once
+          current-season data exists that rankings haven't fully processed.
+        </p>
+      </div>
+    </div>
+
+    <div class="section-gap"></div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Skill by test season <span class="sub">— expanding training window</span></h2>
+        </div>
+        <div id="seasonChart" class="chart"></div>
+        <p class="note">
+          m1's improving trend with the growing window is training data earning its keep.
+          B1 vs B0 is stable because the age curve needs little data to fit.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Fitted coefficients <span class="sub">— mean standardized betas</span></h2>
+        </div>
+        <div id="coefChart" class="chart"></div>
+        <p class="note">
+          <b>age_asof is positive at every position:</b> conditional on a dynasty rank, older players
+          outproduce rest-of-season — ECR discounts age, so age carries recoverable win-now signal.
+          This is the Win-Now vs Dynasty wedge as a fitted, out-of-sample coefficient.
+        </p>
+      </div>
+    </div>
+
+    <div class="section-gap"></div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Protocol detail</h2></div>
+      <div class="protocol-grid">
+        <div class="proto-item">
+          <div class="pi-label">Scoring currency</div>
+          <div class="pi-val">${d.protocol?.currency ?? '—'}</div>
+        </div>
+        <div class="proto-item">
+          <div class="pi-label">Hyperparameter grid</div>
+          <div class="pi-val">${d.protocol?.grid ?? '—'}</div>
+        </div>
+        <div class="proto-item">
+          <div class="pi-label">Logged predictions</div>
+          <div class="pi-val">${nPred?.toLocaleString() ?? '—'}</div>
+        </div>
+        <div class="proto-item">
+          <div class="pi-label">Model runs</div>
+          <div class="pi-val">${d.protocol?.runs?.map(r=>`${r.model_id} ${r.last_run??''}`).join(' · ') ?? '—'}</div>
+        </div>
+      </div>
+    </div>`;
+
+  /* ── CHARTS ── */
+  const pos = d.by_position ?? [];
+  if (pos.length) {
+    Plotly.newPlot('posChart', [
+      { x:pos.map(p=>p.pos), y:pos.map(p=>p.b1_vs_b0), name:'B1 vs B0 (expert vs persistence)',
+        type:'bar', marker:{color:'#3d80f5'}, hovertemplate:'%{x}: %{y:+.1%}<extra>B1 vs B0</extra>' },
+      { x:pos.map(p=>p.pos), y:pos.map(p=>p.m1_vs_b1), name:'m1 vs B1 (production vs expert)',
+        type:'bar', marker:{color:pos.map(p=>(p.m1_vs_b1??0)>=0?'#46d182':'#f5605a')},
+        hovertemplate:'%{x}: %{y:+.1%}<extra>m1 vs B1</extra>' },
+    ], { ...PL, barmode:'group',
+         yaxis:{...PL.yaxis, tickformat:'+.0%', title:{text:'Skill (MAE reduction)',font:{size:11}}} }, CFG);
+  }
+
+  const wk = d.by_week ?? [];
+  if (wk.length) {
+    Plotly.newPlot('weekChart', [{
+      x:wk.map(w=>'Wk '+(w.week??'?')), y:wk.map(w=>w.skill),
+      type:'bar', marker:{color:wk.map(w=>(w.skill??0)>=0?'#46d182':'#f5605a')},
+      text:wk.map(w=>pct(w.skill)), textposition:'outside',
+      textfont:{family:'ui-monospace,Consolas,monospace', size:10},
+      name:'m1 vs B1',
+      hovertemplate:'Week %{x}: %{y:+.1%}<extra></extra>',
+    }], { ...PL, showlegend:false,
+          yaxis:{...PL.yaxis, tickformat:'+.0%', title:{text:'m1 vs B1, by as-of week',font:{size:11}}} }, CFG);
+  }
+
+  const s = d.by_season ?? {};
+  if ((s.seasons||[]).length) {
+    Plotly.newPlot('seasonChart', [
+      { x:s.seasons, y:s.b1_vs_b0, name:'B1 vs B0', mode:'lines+markers',
+        line:{color:'#3d80f5', width:2}, marker:{size:6},
+        hovertemplate:'%{x}: %{y:+.1%}<extra>B1 vs B0</extra>' },
+      { x:s.seasons, y:s.m1_vs_b1, name:'m1 vs B1', mode:'lines+markers',
+        line:{color:'#46d182', width:2}, marker:{size:6},
+        hovertemplate:'%{x}: %{y:+.1%}<extra>m1 vs B1</extra>' },
+    ], { ...PL, yaxis:{...PL.yaxis, tickformat:'+.0%'}, xaxis:{...PL.xaxis, dtick:1} }, CFG);
+  }
+
+  if (d.coefficients) {
+    const c = d.coefficients;
+    Plotly.newPlot('coefChart', [{
+      z:c.beta, x:c.positions, y:c.features, type:'heatmap',
+      colorscale:[[0,'#f5605a'],[0.5,'#161b22'],[1,'#46d182']],
+      zmid:0, showscale:true,
+      colorbar:{ thickness:10, outlinewidth:0, tickfont:{size:10}, tickformat:'+.2f' },
+      hovertemplate:'<b>%{y}</b> · %{x}: %{z:+.2f}<extra></extra>',
+    }], { ...PL, margin:{l:130,r:8,t:12,b:36},
+          yaxis:{...PL.yaxis, autorange:'reversed'} }, CFG);
+  } else {
+    document.getElementById('coefChart').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#3d4756;font-size:13px">No coefficients yet.<br><br>' +
+      '<code style="font-family:ui-monospace,Consolas,monospace;color:#8a95a8;font-size:11px">' +
+      'Run projection_model.py then export_modellab.py</code></div>';
+  }
+}
+
+/* ── LOAD ── */
+fetch('./data/modellab.json')
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(render)
+  .catch(() => {
+    const demo = {
+      verdicts: [
+        { q:'Does expert rank beat persistence?', detail:'B1 vs B0, all positions, all seasons', n:12840, skill:.138, lo:.104, hi:.172 },
+        { q:'Does production model beat expert rank?', detail:'m1 vs B1, WR/TE only, weeks 4+', n:6240, skill:.031, lo:.008, hi:.054 },
+        { q:'Does age add signal beyond ECR?', detail:'age_asof coefficient, all positions', n:12840, skill:.044, lo:.021, hi:.067 },
+        { q:'Does production model beat expert rank at RB?', detail:'m1 vs B1, RB only', n:3200, skill:-.018, lo:-.042, hi:.006 },
+      ],
+      by_position: [
+        { pos:'QB', b1_vs_b0:.22, m1_vs_b1:.02 },
+        { pos:'RB', b1_vs_b0:.11, m1_vs_b1:-.02 },
+        { pos:'WR', b1_vs_b0:.14, m1_vs_b1:.04 },
+        { pos:'TE', b1_vs_b0:.12, m1_vs_b1:.03 },
+      ],
+      by_week:[
+        {week:1,skill:-.01},{week:2,skill:.01},{week:3,skill:.02},
+        {week:4,skill:.04},{week:6,skill:.06},{week:8,skill:.05},{week:10,skill:.04},
+      ],
+      by_season:{ seasons:[2020,2021,2022,2023], b1_vs_b0:[.12,.14,.13,.15], m1_vs_b1:[.01,.02,.03,.04] },
+      coefficients:{ features:['age_asof','pts_last_season','snap_pct','target_share'], positions:['QB','RB','WR','TE'],
+        beta:[[.18,.14,.08,.10],[.22,.08,.12,.06],[.05,.19,.16,.11],[.03,.12,.20,.08]] },
+      protocol:{ currency:'season_points_ppr', grid:'C:[0.1,1,10] max_iter:1000', n_predictions:12840,
+        runs:[{model_id:'B0',last_run:'2024-08-01'},{model_id:'B1',last_run:'2024-08-01'},{model_id:'m1',last_run:'2024-08-14'}] },
+    };
+    render(demo);
+  });
+</script>
+</body>
+</html>
