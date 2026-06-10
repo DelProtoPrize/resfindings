@@ -326,3 +326,50 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+Traceback (most recent call last):
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2702, in execute
+    cur.execute(sql, *args)
+    ~~~~~~~~~~~^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: nflverse_weekly
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\backtest_baselines.py", line 297, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\backtest_baselines.py", line 206, in main
+    curve = train_b1_curve(con, train, league_id, cache)
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\backtest_baselines.py", line 128, in train_b1_curve   
+    f = cache.setdefault((s, ao), features_with_rank(con, ao, s))
+                                  ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\backtest_baselines.py", line 109, in features_with_rank
+    f = build_features(con, as_of=as_of, season=season, horizon="ros")
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\build_features.py", line 133, in build_features       
+    prod = pd.read_sql_query(
+        """
+    ...<6 lines>...
+        con,
+    )
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 497, in read_sql_query
+    return pandas_sql.read_query(
+           ~~~~~~~~~~~~~~~~~~~~~^
+        sql,
+        ^^^^
+    ...<6 lines>...
+        dtype_backend=dtype_backend,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2766, in read_query
+    cursor = self.execute(sql, params)
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2714, in execute
+    raise ex from exc
+pandas.errors.DatabaseError: Execution failed on sql '
+        SELECT w.player_id AS sleeper_id, w.season, w.week,
+               w.pts_league AS pts
+        FROM nflverse_weekly w
+        JOIN _vis_weeks v ON v.season = w.season AND v.week = w.week
+        ORDER BY w.player_id, w.season, w.week
+        ': no such table: nflverse_weekly
