@@ -40,7 +40,15 @@ import sys
 import numpy as np
 import pandas as pd
 
+import build_features as _bf
 from build_features import build_features, visible_weeks
+
+if getattr(_bf, "SCHEMA_VERSION", 1) < 2:
+    sys.exit(
+        "Your build_features.py is STALE (pre-v2: it still queries the "
+        "retired nflverse_weekly table). Replace etl/build_features.py with "
+        "the latest version — v2 reads production features from `outcomes` "
+        "so features and targets share the canonical league currency.")
 
 GRID_WEEKS = (1, 5, 9, 13)
 TEST_SEASONS = range(2020, 2026)
@@ -289,6 +297,25 @@ def main() -> int:
     lo, hi = np.percentile(skills, [2.5, 97.5])
     print(f"player-block bootstrap 95% CI on pooled skill: "
           f"[{lo:.3f}, {hi:.3f}]")
+    # persist pooled headline (test_season=0, position='ALL') for the Model Lab
+    pooled_rows = [
+        ("b0_lastseason", 0, "ros", "ALL", "mae_total", float(mae0), len(allf)),
+        ("b1_ecr_v1", 0, "ros", "ALL", "mae_total", float(mae1), len(allf)),
+        ("b1_ecr_v1", 0, "ros", "ALL", "skill_vs_b0",
+         float(1 - mae1 / mae0), len(allf)),
+        ("b1_ecr_v1", 0, "ros", "ALL", "skill_vs_b0_ci_lo", float(lo), len(allf)),
+        ("b1_ecr_v1", 0, "ros", "ALL", "skill_vs_b0_ci_hi", float(hi), len(allf)),
+    ]
+    for pos, g in allf.groupby("position"):
+        pooled_rows.append(("b1_ecr_v1", 0, "ros", pos, "skill_vs_b0",
+                            float(1 - g.ae_b1.mean() / g.ae_b0.mean()), len(g)))
+        pooled_rows.append(("b0_lastseason", 0, "ros", pos, "mae_total",
+                            float(g.ae_b0.mean()), len(g)))
+        pooled_rows.append(("b1_ecr_v1", 0, "ros", pos, "mae_total",
+                            float(g.ae_b1.mean()), len(g)))
+    con.executemany("INSERT OR REPLACE INTO evaluations VALUES (?,?,?,?,?,?,?)",
+                    pooled_rows)
+    con.commit()
     con.close()
     return 0
 
