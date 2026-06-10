@@ -23,8 +23,10 @@ The self-audit enforces TWO DISTINCT invariants (review reconciliation):
     there grades hindsight as foresight. Refused, loudly.
 
 Expected tables:
-  nflverse_weekly(player_id, season, week, pts_league, ingested_at)   [pending ETL]
-  nfl_week_calendar(season, week, first_game_date, last_game_date)    [pending ETL]
+  outcomes(league_id, sleeper_id, season, week, pts, active)          [LIVE: outcomes_etl,
+                    2019-2025 REG, scored per league config]
+  outcomes_provenance(league_id, is_canonical, ...)                   [LIVE: Drew=canonical]
+  nfl_week_calendar(season, week, first_game_date, last_game_date)    [LIVE: outcomes_etl]
   dp_values_history(knowledge_date, player_key, sleeper_id, ecr_1qb, ecr_2qb,
                     value_1qb, value_2qb, draft_year, ...)            [LIVE: 318
                     snapshots 2019-04-06..2026-06-05 via dp_archive_etl]
@@ -115,10 +117,22 @@ def latest_fc_snapshot(con: sqlite3.Connection, as_of: str) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 
 def build_features(con: sqlite3.Connection, as_of: str, season: int,
-                   horizon: str) -> pd.DataFrame:
-    """One row per sleeper_id; features only; facts dated <= as_of only."""
+                   horizon: str, league_id: str | None = None) -> pd.DataFrame:
+    """One row per sleeper_id; features only; facts dated <= as_of only.
+
+    Production features are expressed in LEAGUE POINTS — by default the
+    canonical league (The Drew League, per outcomes_provenance), so features
+    and targets share a currency. Pass league_id to build features under a
+    different config (e.g. a best-ball league's scoring)."""
     if horizon not in HORIZONS:
         raise ValueError(f"horizon must be one of {HORIZONS}")
+    if league_id is None:
+        row = con.execute("SELECT league_id FROM outcomes_provenance "
+                          "WHERE is_canonical=1").fetchone()
+        if row is None:
+            raise RuntimeError("No canonical league in outcomes_provenance — "
+                               "run outcomes_etl.py first.")
+        league_id = row[0]
 
     weeks = visible_weeks(con, as_of)
     season_weeks = weeks[weeks.season == season]
@@ -132,13 +146,13 @@ def build_features(con: sqlite3.Connection, as_of: str, season: int,
         list(weeks[["season", "week"]].itertuples(index=False, name=None)))
     prod = pd.read_sql_query(
         """
-        SELECT w.player_id AS sleeper_id, w.season, w.week,
-               w.pts_league AS pts
-        FROM nflverse_weekly w
-        JOIN _vis_weeks v ON v.season = w.season AND v.week = w.week
-        ORDER BY w.player_id, w.season, w.week
+        SELECT o.sleeper_id, o.season, o.week, o.pts
+        FROM outcomes o
+        JOIN _vis_weeks v ON v.season = o.season AND v.week = o.week
+        WHERE o.league_id = ?
+        ORDER BY o.sleeper_id, o.season, o.week
         """,
-        con,
+        con, params=(league_id,),
     )
 
     xwalk = pd.read_sql_query(
@@ -291,11 +305,11 @@ if __name__ == "__main__":
     con = sqlite3.connect(db)
     have = {r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
-    missing = {"nflverse_weekly", "nfl_week_calendar",
+    missing = {"outcomes", "outcomes_provenance", "nfl_week_calendar",
                "fc_values_snapshots"} - have
     if missing:
         sys.exit(f"DB at {db} is missing harness tables {sorted(missing)} — "
-                 f"these land with the outcomes ETL (build order #2). "
+                 f"run outcomes_etl.py (use --seed-fc for fc_values_snapshots); "
                  f"dp_values_history/id_crosswalk come from dp_archive_etl.py.")
     f = build_features(con, as_of="2025-11-04", season=2025, horizon="ros")
     print(f.shape)
