@@ -171,3 +171,48 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py:84: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  weekly["is_te"] = (weekly.position == "TE").astype(float)
+replacement_ppg shifts (legacy -> rebuilt), Drew League:
+  QB: 13.70 -> 13.70  (Δ +0.00)
+  RB: 8.25 -> 8.25  (Δ +0.00)
+  TE: 9.12 -> 9.12  (Δ +0.00)
+  WR: 10.40 -> 10.40  (Δ +0.00)
+  QB: 13.70 -> 13.70  (Δ +0.00)
+  RB: 8.25 -> 8.25  (Δ +0.00)
+  TE: 9.12 -> 9.12  (Δ +0.00)
+  WR: 10.40 -> 10.40  (Δ +0.00)
+Traceback (most recent call last):
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2702, in execute
+    cur.execute(sql, *args)
+    ~~~~~~~~~~~^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: outcomes_provenance
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py", line 173, in <module>   
+    sys.exit(main())
+             ~~~~^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py", line 143, in main       
+    legacy = pd.read_sql_query(
+        "SELECT player_id, position, games AS games_old, ppg AS ppg_old, "
+        "vorp AS vorp_old FROM player_production_value_legacy "
+        "WHERE league_id=(SELECT league_id FROM outcomes_provenance "
+        "WHERE is_canonical=1)", con)
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 497, in read_sql_query
+    return pandas_sql.read_query(
+           ~~~~~~~~~~~~~~~~~~~~~^
+        sql,
+        ^^^^
+    ...<6 lines>...
+        dtype_backend=dtype_backend,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2766, in read_query
+    cursor = self.execute(sql, params)
+  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2714, in execute
+    raise ex from exc
+pandas.errors.DatabaseError: Execution failed on sql 'SELECT player_id, position, games AS games_old, ppg AS ppg_old, vorp AS vorp_old FROM player_production_value_legacy WHERE league_id=(SELECT league_id FROM outcomes_provenance WHERE is_canonical=1)': no such table: outcomes_provenance
