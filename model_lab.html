@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Lab — Roster Portfolio &amp; Asset Valuation</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root { --bg:#0f1216; --panel:#171c23; --ink:#e8eef5; --muted:#8b97a7;
+            --accent:#4f8cff; --good:#5fd08a; --bad:#ff7a7a; --line:#232a33;
+            --mono:ui-monospace,'Cascadia Mono',Consolas,monospace; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+           font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
+    header { padding:18px 24px; border-bottom:1px solid var(--line);
+             display:flex; gap:16px; align-items:baseline; }
+    h1 { font-size:18px; margin:0; font-weight:650; }
+    nav a { color:var(--muted); text-decoration:none; font-size:13px;
+            padding:4px 10px; border-radius:6px; }
+    nav a:hover, nav a:focus-visible { color:var(--ink); background:#1e2530;
+            outline:2px solid var(--accent); outline-offset:1px; }
+    nav a.here { color:var(--ink); background:#1e2530; }
+    main { padding:24px; display:grid; gap:24px; max-width:1100px; }
+    .panel { background:var(--panel); border:1px solid var(--line);
+             border-radius:12px; padding:16px; }
+    .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em;
+                color:var(--muted); margin:0 0 12px; font-weight:600; }
+    .panel h2 .sub { font-weight:400; text-transform:none; }
+    .grid2 { display:grid; gap:24px; grid-template-columns:1fr 1fr; }
+    @media (max-width:840px){ .grid2 { grid-template-columns:1fr; } }
+
+    /* ---- verdict ledger (signature element) ---- */
+    .verdict { display:grid; grid-template-columns:1fr 220px 110px;
+               gap:6px 20px; align-items:center; padding:14px 4px;
+               border-bottom:1px solid var(--line); }
+    .verdict:last-child { border-bottom:0; }
+    .verdict .q { font-size:16px; font-weight:600; }
+    .verdict .d { grid-column:1; font-size:12.5px; color:var(--muted); }
+    .verdict .ans { grid-column:3; grid-row:1 / span 2; text-align:right;
+                    font:600 22px/1.1 var(--mono); }
+    .verdict .ans small { display:block; font:400 11px var(--mono);
+                          color:var(--muted); margin-top:3px; }
+    .ci { grid-column:2; grid-row:1 / span 2; }
+    .ci svg { display:block; width:100%; height:34px; }
+    @media (max-width:700px){
+      .verdict { grid-template-columns:1fr; }
+      .verdict .ans { grid-column:1; grid-row:auto; text-align:left; }
+      .ci { grid-column:1; grid-row:auto; }
+    }
+    .chart { height:340px; }
+    .note { font-size:12.5px; color:var(--muted); margin-top:10px; }
+    .note b { color:var(--ink); }
+    .protocol { font-size:12.5px; color:var(--muted); display:grid; gap:6px; }
+    .protocol code { font-family:var(--mono); color:var(--ink); font-size:12px; }
+    .state { padding:36px; text-align:center; color:var(--muted); }
+    .state code { font-family:var(--mono); color:var(--ink); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Roster Portfolio &amp; Asset Valuation</h1>
+    <nav>
+      <a href="./index.html">Dashboard</a>
+      <a class="here" href="./model_lab.html" aria-current="page">Model Lab</a>
+    </nav>
+  </header>
+  <main id="main">
+    <div class="state" id="loading">Loading backtest results…</div>
+  </main>
+
+<script>
+const POSC = { QB:"#4f8cff", RB:"#5fd08a", WR:"#e6b450", TE:"#c792ea" };
+const PL = {   // shared plotly layout in the house theme
+  paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+  font:{ color:"#8b97a7", size:12,
+         family:"-apple-system,Segoe UI,Roboto,sans-serif" },
+  margin:{ l:54, r:16, t:8, b:40 },
+  xaxis:{ gridcolor:"#232a33", zerolinecolor:"#3a4453" },
+  yaxis:{ gridcolor:"#232a33", zerolinecolor:"#3a4453" },
+  legend:{ orientation:"h", y:-0.18 },
+};
+const CFG = { displayModeBar:false, responsive:true };
+const pct = v => (v==null ? "—" : (v>=0?"+":"") + (v*100).toFixed(1) + "%");
+
+/* Inline CI bar: interval against a zero line, scaled to the row's own range.
+   The page's one visual thesis: every answer ships with its interval. */
+function ciBar(lo, hi, mid){
+  if (lo==null || hi==null) return "<svg></svg>";
+  const span = Math.max(Math.abs(lo), Math.abs(hi), Math.abs(mid)) * 1.25 || 1;
+  const x = v => 50 + (v/span)*48;                       // viewBox 0..100
+  const sig = lo > 0 || hi < 0;                          // CI clear of zero
+  const col = !sig ? "#8b97a7" : (mid > 0 ? "#5fd08a" : "#ff7a7a");
+  return `<svg viewBox="0 0 100 34" preserveAspectRatio="none" role="img"
+    aria-label="95% CI ${pct(lo)} to ${pct(hi)}">
+    <line x1="50" y1="3" x2="50" y2="31" stroke="#3a4453" stroke-width="1"/>
+    <line x1="${x(lo)}" y1="17" x2="${x(hi)}" y2="17" stroke="${col}"
+          stroke-width="3" stroke-linecap="round"/>
+    <line x1="${x(lo)}" y1="11" x2="${x(lo)}" y2="23" stroke="${col}" stroke-width="2"/>
+    <line x1="${x(hi)}" y1="11" x2="${x(hi)}" y2="23" stroke="${col}" stroke-width="2"/>
+    <circle cx="${x(mid)}" cy="17" r="4" fill="${col}"/>
+  </svg>`;
+}
+
+function verdictRow(v){
+  const sig = v.lo!=null && (v.lo>0 || v.hi<0);
+  const word = v.skill==null ? "" :
+    sig ? (v.skill>0 ? "yes" : "no — worse") : "no detectable edge";
+  return `<div class="verdict">
+    <div class="q">${v.q}</div>
+    <div class="d">${v.detail} · n=${v.n?.toLocaleString() ?? "—"}</div>
+    <div class="ci">${ciBar(v.lo, v.hi, v.skill)}</div>
+    <div class="ans">${pct(v.skill)}<small>${word} · 95% CI ${pct(v.lo)} … ${pct(v.hi)}</small></div>
+  </div>`;
+}
+
+function render(d){
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <section class="panel">
+      <h2>Verdicts <span class="sub">— skill = MAE reduction vs the stated baseline; intervals are player-block bootstrap 95% CIs</span></h2>
+      <div id="ledger">${d.verdicts.map(verdictRow).join("")}</div>
+      <p class="note">Reading guide: an interval that <b>clears the zero line</b> is a finding;
+        one that straddles it is an honest null. Both are results.</p>
+    </section>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>Skill by position</h2>
+        <div id="posChart" class="chart"></div>
+        <p class="note"><b>Expert rank vs persistence</b> is large everywhere (QB most —
+          superflex scoring makes stale priors expensive). <b>Production vs expert rank</b>
+          is small and position-dependent: RB is negative — usage shifts are what rankers
+          react to fastest, so trailing stats lag there.</p>
+      </section>
+      <section class="panel">
+        <h2>When the production edge exists</h2>
+        <div id="weekChart" class="chart"></div>
+        <p class="note">At the week-1 as-of, expert rank already knows everything these
+          features know. The edge only appears once current-season data exists that ranks
+          haven't fully digested.</p>
+      </section>
+    </div>
+
+    <div class="grid2">
+      <section class="panel">
+        <h2>Skill by test season <span class="sub">— expanding training window</span></h2>
+        <div id="seasonChart" class="chart"></div>
+        <p class="note">m1's trend with the growing window is the training data earning
+          its keep; B1 vs B0 is stable because the curve needs little data.</p>
+      </section>
+      <section class="panel">
+        <h2>What the model learned <span class="sub">— mean standardized coefficients</span></h2>
+        <div id="coefChart" class="chart"></div>
+        <p class="note"><b>age_asof is positive at every position:</b> conditional on a
+          dynasty rank, older players outproduce rest-of-season — dynasty ECR discounts
+          age, so age carries recoverable win-now signal. This is the Win-Now vs Dynasty
+          wedge as a fitted, out-of-sample coefficient.</p>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Protocol</h2>
+      <div class="protocol">
+        <span>Currency: <code>${d.protocol.currency}</code></span>
+        <span>Grid: <code>${d.protocol.grid}</code></span>
+        <span>Predictions are append-only rows written at their as-of date and never
+          recomputed — <code>${d.protocol.n_predictions.toLocaleString()}</code> logged.
+          Comparisons are on common support (players every model could predict);
+          B1's rookie-only coverage is reported separately, never mixed in.</span>
+        <span>Last runs: ${d.protocol.runs.map(r =>
+          `<code>${r.model_id}</code> ${r.last_run ?? ""}`).join(" · ")}</span>
+      </div>
+    </section>`;
+
+  /* position chart */
+  const pos = d.by_position;
+  Plotly.newPlot("posChart", [
+    { x:pos.map(p=>p.pos), y:pos.map(p=>p.b1_vs_b0), name:"expert rank vs persistence (B1 vs B0)",
+      type:"bar", marker:{color:"#4f8cff"} },
+    { x:pos.map(p=>p.pos), y:pos.map(p=>p.m1_vs_b1), name:"production vs expert rank (m1 vs B1)",
+      type:"bar", marker:{color:pos.map(p=>p.m1_vs_b1>=0?"#5fd08a":"#ff7a7a")} },
+  ], { ...PL, barmode:"group",
+       yaxis:{ ...PL.yaxis, tickformat:"+.0%", title:{text:"skill (MAE reduction)"} } }, CFG);
+
+  /* week chart */
+  const wk = d.by_week;
+  Plotly.newPlot("weekChart", [{
+    x:wk.map(w=>"week "+w.week), y:wk.map(w=>w.skill), type:"bar",
+    marker:{ color:wk.map(w=>w.skill>=0?"#5fd08a":"#ff7a7a") },
+    text:wk.map(w=>pct(w.skill)), textposition:"outside",
+    textfont:{ family:"ui-monospace,Consolas,monospace", size:11 },
+    name:"m1 vs B1",
+  }], { ...PL, showlegend:false,
+        yaxis:{ ...PL.yaxis, tickformat:"+.0%",
+                title:{text:"skill vs B1, by as-of week"} } }, CFG);
+
+  /* season chart */
+  const s = d.by_season;
+  Plotly.newPlot("seasonChart", [
+    { x:s.seasons, y:s.b1_vs_b0, name:"B1 vs B0", mode:"lines+markers",
+      line:{color:"#4f8cff"} },
+    { x:s.seasons, y:s.m1_vs_b1, name:"m1 vs B1", mode:"lines+markers",
+      line:{color:"#5fd08a"} },
+  ], { ...PL, yaxis:{ ...PL.yaxis, tickformat:"+.0%" },
+       xaxis:{ ...PL.xaxis, dtick:1 } }, CFG);
+
+  /* coefficient heatmap */
+  if (d.coefficients){
+    const c = d.coefficients;
+    Plotly.newPlot("coefChart", [{
+      z:c.beta, x:c.positions, y:c.features, type:"heatmap",
+      colorscale:[[0,"#ff7a7a"],[0.5,"#171c23"],[1,"#5fd08a"]],
+      zmid:0, showscale:true,
+      colorbar:{ thickness:10, outlinewidth:0, tickfont:{size:10} },
+      hovertemplate:"%{y} · %{x}: %{z:+.2f}<extra></extra>",
+    }], { ...PL, margin:{ l:130, r:8, t:8, b:36 },
+          yaxis:{ autorange:"reversed" } }, CFG);
+  } else {
+    document.getElementById("coefChart").innerHTML =
+      '<div class="state">No coefficients yet — run <code>projection_model.py</code>, then <code>export_modellab.py</code>.</div>';
+  }
+}
+
+fetch("./data/modellab.json")
+  .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(render)
+  .catch(() => {
+    document.getElementById("main").innerHTML = `<section class="panel">
+      <div class="state">No backtest results found at <code>data/modellab.json</code>.<br><br>
+      Generate them: <code>python backtest_baselines.py --db data/dynasty.db</code> →
+      <code>python projection_model.py --db data/dynasty.db</code> →
+      <code>python export_modellab.py --db data/dynasty.db --out ../web/data/modellab.json</code></div>
+    </section>`;
+  });
+</script>
+</body>
+</html>
