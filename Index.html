@@ -13,6 +13,11 @@
     header { padding:18px 24px; border-bottom:1px solid #232a33; display:flex;
              gap:16px; align-items:baseline; }
     h1 { font-size:18px; margin:0; font-weight:650; }
+    nav a { color:var(--muted); text-decoration:none; font-size:13px;
+            padding:4px 10px; border-radius:6px; }
+    nav a:hover, nav a:focus-visible { color:var(--ink); background:#1e2530;
+            outline:2px solid var(--accent); outline-offset:1px; }
+    nav a.here { color:var(--ink); background:#1e2530; }
     select { background:var(--panel); color:var(--ink); border:1px solid #2a323c;
              border-radius:8px; padding:7px 10px; }
         <nav>
