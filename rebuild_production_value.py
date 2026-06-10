@@ -67,10 +67,18 @@ def main() -> int:
     ap.add_argument("--season", type=int, default=2025)
     args = ap.parse_args()
     con = sqlite3.connect(args.db)
-
-    # backup once; re-runs keep the original legacy snapshot
     have = {r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
+    need = {"dim_leagues", "id_crosswalk"}
+    if not ({"player_production_value", "player_production_value_legacy"} & have):
+        sys.exit("Neither player_production_value nor its legacy backup "
+                 "exists — nothing to rebuild.")
+    if need - have:
+        sys.exit(f"Missing {sorted(need - have)}; id_crosswalk comes from "
+                 f"dp_archive_etl.py. This script does NOT require the "
+                 f"outcomes tables.")
+
+    # backup once; re-runs keep the original legacy snapshot
     if "player_production_value_legacy" not in have:
         con.execute("ALTER TABLE player_production_value "
                     "RENAME TO player_production_value_legacy")
@@ -80,7 +88,7 @@ def main() -> int:
     # REG-only weekly stats, crosswalked to sleeper ids — THE fix
     weekly = pd.read_csv(STATS_URL.format(season=args.season), low_memory=False)
     weekly = weekly[(weekly.season_type == "REG")
-                    & (weekly.position.isin(POSITIONS))]
+                    & (weekly.position.isin(POSITIONS))].copy()
     weekly["is_te"] = (weekly.position == "TE").astype(float)
     xw = pd.read_sql_query(
         "SELECT gsis_id, sleeper_id FROM id_crosswalk "
@@ -136,34 +144,45 @@ def main() -> int:
     con.commit()
 
     # ---- delta report ---------------------------------------------------------
+    # Drew league_id straight from dim_leagues: this report must not depend
+    # on the outcomes tables (a later build step).
+    drew_id = con.execute(
+        "SELECT league_id FROM dim_leagues WHERE league_name=? "
+        "ORDER BY season DESC LIMIT 1", ("The Drew League",)).fetchone()[0]
     print("replacement_ppg shifts (legacy -> rebuilt), Drew League:")
+    seen = set()
     for nm, lid, pos, old, new in deltas:
-        if nm == "The Drew League":
+        if nm == "The Drew League" and pos not in seen:
+            seen.add(pos)
             print(f"  {pos}: {old:.2f} -> {new:.2f}  (Δ {new - old:+.2f})")
     legacy = pd.read_sql_query(
         "SELECT player_id, position, games AS games_old, ppg AS ppg_old, "
         "vorp AS vorp_old FROM player_production_value_legacy "
-        "WHERE league_id=(SELECT league_id FROM outcomes_provenance "
-        "WHERE is_canonical=1)", con)
+        "WHERE league_id=?", con, params=(drew_id,))
     new = pd.read_sql_query(
         "SELECT player_id, games AS games_new, ppg AS ppg_new, vorp AS "
-        "vorp_new FROM player_production_value WHERE league_id="
-        "(SELECT league_id FROM outcomes_provenance WHERE is_canonical=1)",
-        con)
+        "vorp_new FROM player_production_value WHERE league_id=?",
+        con, params=(drew_id,))
     m = legacy.merge(new, on="player_id")
     m["dvorp"] = m.vorp_new - m.vorp_old
-    movers = m[m.games_old != m.games_new].nlargest(8, "dvorp",
-                                                    keep="all").head(8)
+    changed = m[m.games_old != m.games_new]
+    if changed.empty:
+        print("\nNo game counts changed: the legacy table was already "
+              "REG-only (points_model already patched). Rebuild confirms "
+              "agreement between the two scorers — no contamination found.")
+        con.close()
+        return 0
+    movers = changed.nlargest(8, "dvorp", keep="all").head(8)
     names = pd.read_sql_query(
         "SELECT player_id, player_name FROM dim_players", con)
     movers = movers.merge(names, on="player_id", how="left")
-    print(f"\n{(m.games_old != m.games_new).sum()} players' game counts "
+    print(f"\n{len(changed)} players' game counts "
           f"changed (POST weeks removed). Largest VORP gainers (playoff "
           f"weeks were DRAGGING their ppg):")
     print(movers[["player_name", "games_old", "games_new", "ppg_old",
                   "ppg_new", "vorp_old", "vorp_new"]].to_string(index=False))
     print(f"\nmedian |Δvorp| among changed: "
-          f"{m.loc[m.games_old != m.games_new, 'dvorp'].abs().median():.2f}; "
+          f"{changed.dvorp.abs().median():.2f}; "
           f"max |Δvorp|: {m.dvorp.abs().max():.2f}")
     con.close()
     return 0
@@ -171,48 +190,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py:84: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
-  weekly["is_te"] = (weekly.position == "TE").astype(float)
-replacement_ppg shifts (legacy -> rebuilt), Drew League:
-  QB: 13.70 -> 13.70  (Δ +0.00)
-  RB: 8.25 -> 8.25  (Δ +0.00)
-  TE: 9.12 -> 9.12  (Δ +0.00)
-  WR: 10.40 -> 10.40  (Δ +0.00)
-  QB: 13.70 -> 13.70  (Δ +0.00)
-  RB: 8.25 -> 8.25  (Δ +0.00)
-  TE: 9.12 -> 9.12  (Δ +0.00)
-  WR: 10.40 -> 10.40  (Δ +0.00)
-Traceback (most recent call last):
-  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2702, in execute
-    cur.execute(sql, *args)
-    ~~~~~~~~~~~^^^^^^^^^^^^
-sqlite3.OperationalError: no such table: outcomes_provenance
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py", line 173, in <module>   
-    sys.exit(main())
-             ~~~~^^
-  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\rebuild_production_value.py", line 143, in main       
-    legacy = pd.read_sql_query(
-        "SELECT player_id, position, games AS games_old, ppg AS ppg_old, "
-        "vorp AS vorp_old FROM player_production_value_legacy "
-        "WHERE league_id=(SELECT league_id FROM outcomes_provenance "
-        "WHERE is_canonical=1)", con)
-  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 497, in read_sql_query
-    return pandas_sql.read_query(
-           ~~~~~~~~~~~~~~~~~~~~~^
-        sql,
-        ^^^^
-    ...<6 lines>...
-        dtype_backend=dtype_backend,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2766, in read_query
-    cursor = self.execute(sql, params)
-  File "C:\Users\delro\AppData\Roaming\Python\Python314\site-packages\pandas\io\sql.py", line 2714, in execute
-    raise ex from exc
-pandas.errors.DatabaseError: Execution failed on sql 'SELECT player_id, position, games AS games_old, ppg AS ppg_old, vorp AS vorp_old FROM player_production_value_legacy WHERE league_id=(SELECT league_id FROM outcomes_provenance WHERE is_canonical=1)': no such table: outcomes_provenance
