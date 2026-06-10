@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roster Portfolio &amp; Asset Valuation</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* base surfaces — near-black terminal, kept from the original direction */
+      --bg: #080b0f;
+      --bg-grad: radial-gradient(1200px 600px at 78% -8%, #10182400 0%, #080b0f 60%);
+      --surface: #0f1318;
+      --panel: #141a21;
+      --panel-2: #171e27;
+      --panel-hover: #1b2330;
+      --ink: #e6ecf5;
+      --ink-dim: #8a97ab;
+      --ink-faint: #4a5666;
+      --line: #1d242e;
+      --line-strong: #2a3340;
+      --accent: #4d8dff;
+      --accent-dim: #15294d;
+      /* meaningful diverging scale for VALUATION (intrinsic vs market) */
+      --disc: #35c7e0;     /* underpriced by market — production > price (cool) */
+      --disc-dim: #0c3340;
+      --prem: #ff8b5e;     /* market premium — price > production (warm) */
+      --prem-dim: #3a2113;
+      --good: #46d182;
+      --good-dim: #0e3d23;
+      --bad: #f5605a;
+      --bad-dim: #3a1513;
+      --warn: #ecb13e;
+      --warn-dim: #3a2c0c;
+      /* position identity — the real semantic palette */
+      --qb: #4d8dff; --rb: #46d182; --wr: #ecb13e; --te: #b889ff; --k: #8a97ab;
+      /* type */
+      --display: 'Space Grotesk', -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --sans: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+      /* spacing rhythm */
+      --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+      --r: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+      color: var(--ink);
+      font: 14px/1.55 var(--sans);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: rgba(77,141,255,.3); }
+
+    /* ── TICKER TAPE — FC market price + 30-day FC drift (the approved movement metric) ── */
+    .tape-wrap { background: var(--surface); border-bottom: 1px solid var(--line); overflow: hidden; height: 36px; display: flex; align-items: center; }
+    .tape-label {
+      flex-shrink: 0; padding: 0 14px; font: 700 10px/1 var(--mono); letter-spacing: .14em;
+      color: var(--accent); border-right: 1px solid var(--line); height: 100%; display: flex; align-items: center; gap: 7px;
+      background: var(--surface); z-index: 1;
+    }
+    .tape-label::before { content:''; width:6px; height:6px; border-radius:50%; background: var(--good); box-shadow: 0 0 8px var(--good); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .tape-scroll { flex: 1; overflow: hidden; position: relative; }
+    .tape-scroll::after { content:''; position:absolute; top:0; right:0; bottom:0; width:60px; background: linear-gradient(90deg, transparent, var(--surface)); pointer-events:none; }
+    .tape-inner { display: flex; white-space: nowrap; animation: ticker 60s linear infinite; will-change: transform; }
+    .tape-inner:hover { animation-play-state: paused; }
+    @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    .tape-item { display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-right: 1px solid var(--line); font: 12px var(--mono); }
+    .tape-item .name { color: var(--ink); font-weight: 600; }
+    .tape-item .val { color: var(--ink-dim); }
+    .tape-item .delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tape-item .pos-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; letter-spacing: .03em; }
+
+    /* ── HEADER ── */
+    header { padding: 14px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 20px; background: var(--surface); }
+    .header-brand { display: flex; flex-direction: column; gap: 3px; }
+    .header-brand .wordmark { font: 700 17px/1 var(--display); color: var(--ink); letter-spacing: -.02em; }
+    .header-brand .wordmark .mk { color: var(--accent); }
+    .header-brand .tagline { font: 600 10px/1 var(--mono); color: var(--ink-dim); letter-spacing: .16em; text-transform: uppercase; }
+    .header-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    .scoring-badge { font: 600 10px/1 var(--mono); letter-spacing: .06em; color: var(--ink-dim); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 9px; white-space: nowrap; }
+    .scoring-badge b { color: var(--ink); font-weight: 700; }
+    nav { display: flex; gap: 4px; }
+    nav a { color: var(--ink-dim); text-decoration: none; font-size: 12px; padding: 6px 13px; border-radius: 7px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { color: var(--ink); background: var(--panel-hover); }
+    nav a.here { color: var(--ink); background: var(--panel); border-color: var(--line-strong); }
+    select { background: var(--panel); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 7px; padding: 7px 12px; font: 13px var(--sans); cursor: pointer; }
+    select:focus-visible, nav a:focus-visible, .action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ── LAYOUT ── */
+    .page { padding: 22px 24px 40px; max-width: 1280px; margin: 0 auto; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-hero { display: grid; grid-template-columns: 1.62fr 1fr; gap: 16px; }
+    .grid-alloc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .section-gap { height: 22px; }
+    @media (max-width: 980px) { .grid-4 { grid-template-columns: 1fr 1fr; } .grid-2, .grid-hero, .grid-alloc { grid-template-columns: 1fr; } }
+
+    .eyebrow { font: 700 10px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); display: flex; align-items: center; gap: 10px; margin: 4px 2px 14px; }
+    .eyebrow::after { content:''; flex:1; height:1px; background: var(--line); }
+
+    /* ── PANELS ── */
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; position: relative; }
+    .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
+    .panel-head h2 { font: 700 11px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .09em; color: var(--ink-dim); }
+    .panel-head .panel-sub { font: 400 11px var(--sans); color: var(--ink-faint); text-transform: none; letter-spacing: 0; margin-left: 8px; }
+    .panel-head .action-btn { font: 11px var(--sans); color: var(--accent); cursor: pointer; background: none; border: none; padding: 0; }
+
+    /* ── KPI CARDS ── */
+    .kpi { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 10px; padding: 15px 16px 16px; position: relative; overflow: hidden; }
+    .kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; opacity: .9; }
+    .kpi.kpi-accent::before { background: var(--accent); }
+    .kpi.kpi-disc::before  { background: var(--disc); }
+    .kpi.kpi-prem::before  { background: var(--prem); }
+    .kpi.kpi-good::before  { background: var(--good); }
+    .kpi.kpi-warn::before  { background: var(--warn); }
+    .kpi.kpi-bad::before   { background: var(--bad); }
+    .kpi-label { font: 600 10px/1 var(--mono); color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 11px; display: flex; align-items: center; gap: 6px; }
+    .kpi-value { font: 700 27px/1 var(--display); color: var(--ink); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .kpi-value small { font: 600 14px/1 var(--mono); color: var(--ink-dim); }
+    .kpi-sub { font-size: 11px; color: var(--ink-dim); margin-top: 9px; display: flex; align-items: center; gap: 6px; }
+    .delta-tag { font: 700 11px var(--mono); padding: 1px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+    .delta-tag.up { color: var(--good); background: var(--good-dim); }
+    .delta-tag.down { color: var(--bad); background: var(--bad-dim); }
+    .delta-tag.flat { color: var(--warn); background: var(--warn-dim); }
+    .delta-tag.disc { color: var(--disc); background: var(--disc-dim); }
+    .delta-tag.prem { color: var(--prem); background: var(--prem-dim); }
+
+    /* ── TABLES ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { text-align: left; padding: 7px 10px; font: 700 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+    thead th.num { text-align: right; }
+    tbody td { padding: 9px 10px; border-bottom: 1px solid var(--line); color: var(--ink); }
+    tbody td.num { text-align: right; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr.clickable { cursor: pointer; transition: background .12s; }
+    tbody tr.clickable:hover { background: var(--panel-hover); }
+    tbody tr.clickable td:first-child { border-left: 2px solid transparent; }
+    tbody tr.clickable:hover td:first-child { border-left-color: var(--accent); }
+
+    /* ── POSITION BADGES ── */
+    .pos { font: 700 10px/1 var(--mono); padding: 3px 6px; border-radius: 4px; }
+    .pos-QB { background: rgba(77,141,255,.16); color: var(--qb); }
+    .pos-RB { background: rgba(70,209,130,.16); color: var(--rb); }
+    .pos-WR { background: rgba(236,177,62,.16); color: var(--wr); }
+    .pos-TE { background: rgba(184,137,255,.16); color: var(--te); }
+    .pos-K, .pos-DEF { background: rgba(138,151,171,.16); color: var(--k); }
+
+    /* ── SIGNAL TAGS ── */
+    .signal { font: 700 10px/1 var(--mono); padding: 3px 8px; border-radius: 4px; letter-spacing: .04em; }
+    .signal-buy  { background: var(--disc-dim); color: var(--disc); }
+    .signal-sell { background: var(--prem-dim); color: var(--prem); }
+    .signal-hold { background: var(--panel-hover); color: var(--ink-dim); }
+
+    /* ── VALUE BAR ── */
+    .value-bar-wrap { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+    .value-bar { width: 54px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+    .value-bar-fill { height: 100%; border-radius: 2px; }
+
+    /* ── MISPRICE RAIL (hero side) ── */
+    .misprice-list { display: flex; flex-direction: column; }
+    .mp-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .mp-row:last-child { border-bottom: 0; }
+    .mp-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mp-meta { font: 11px var(--mono); color: var(--ink-faint); }
+    .mp-resid { font: 700 13px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+    .mp-bar { grid-column: 1 / -1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: -2px; }
+    .mp-bar > div { height: 100%; }
+
+    /* ── HHI / CONCENTRATION METER ── */
+    .meter-label { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--ink-dim); margin-bottom: 7px; }
+    .meter-label b { color: var(--ink); font-weight: 700; }
+    .hhi-track { display: flex; gap: 2px; }
+    .hhi-seg { flex: 1; height: 8px; border-radius: 1px; background: var(--line); }
+    .stat-line { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .stat-line:last-child { border-bottom: 0; }
+    .stat-line .sl-label { color: var(--ink-dim); }
+    .stat-line .sl-val { font: 600 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+    /* ── ROSTER SUMMARY PILLS ── */
+    .summary-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .sum-pill { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; }
+    .sum-pill .sp-label { font: 600 10px/1 var(--mono); color: var(--ink-dim); text-transform: uppercase; letter-spacing: .06em; }
+    .sum-pill .sp-val { font: 700 18px/1.1 var(--display); color: var(--ink); margin-top: 5px; font-variant-numeric: tabular-nums; }
+
+    /* ── GATED (model-dependent) ── */
+    .gated { position: relative; }
+    .gated .gate-veil { position: absolute; inset: 0; background: rgba(8,11,15,.62); backdrop-filter: blur(1.5px); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; padding: 16px; }
+    .gate-veil .gv-lock { font: 700 10px/1 var(--mono); letter-spacing: .12em; color: var(--warn); text-transform: uppercase; }
+    .gate-veil .gv-msg { font-size: 11px; color: var(--ink-dim); max-width: 230px; line-height: 1.5; }
+    .gate-veil code { font: 11px var(--mono); color: var(--ink); background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+
+    /* ── ARB DELTA ── */
+    .arb-pos { color: var(--disc); font-weight: 700; }
+    .arb-neg { color: var(--prem); font-weight: 700; }
+
+    /* ── METHODOLOGY FOOTER ── */
+    .method { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; grid-template-columns: repeat(4,1fr); gap: 18px; }
+    @media(max-width:980px){ .method { grid-template-columns: 1fr 1fr; } }
+    .method .m-term { font: 700 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px; }
+    .method .m-def { font-size: 11.5px; color: var(--ink-faint); line-height: 1.55; }
+    .method .m-def b { color: var(--ink-dim); font-weight: 600; }
+
+    /* ── TOOLTIP ── */
+    [data-tip] { position: relative; cursor: help; }
+    [data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 0; max-width: 260px; width: max-content; background: #0a0e13; border: 1px solid var(--line-strong); color: var(--ink); font: 11px/1.5 var(--sans); padding: 7px 9px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+    [data-tip]:hover::after { opacity: 1; }
+
+    /* ── STATE ── */
+    .state-msg { padding: 48px 20px; text-align: center; color: var(--ink-dim); font-size: 13px; line-height: 1.8; }
+    .state-msg code { font: 12px var(--mono); color: var(--ink); background: var(--surface); padding: 2px 6px; border-radius: 4px; }
+
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+
+  <!-- ASSET TAPE -->
+  <div class="tape-wrap">
+    <div class="tape-label">MARKET</div>
+    <div class="tape-scroll"><div class="tape-inner" id="tapeInner"></div></div>
+  </div>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-brand">
+      <div class="wordmark">Roster Portfolio <span class="mk">/</span> Asset Valuation</div>
+      <div class="tagline">Intrinsic vs Market · Dynasty</div>
+    </div>
+    <div class="header-controls">
+      <span class="scoring-badge" id="scoringBadge">—</span>
+      <select id="league"><option>Loading leagues…</option></select>
+      <nav>
+        <a class="here" href="./index.html">Dashboard</a>
+        <a href="./model_lab.html">Model Lab</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div class="page" id="page">
+    <div class="state-msg" id="loading">
+      Connecting to the warehouse…<br><br>
+      Start the API with <code>node server.js</code> against a populated <code>dynasty.db</code>, or this page falls back to sample data.
+    </div>
+  </div>
+
+<script type="module">
+/* ─────────────── THEME / PLOTLY ─────────────── */
+const CSSV = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const PL = {
+  paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+  font: { color: '#8a97ab', size: 11, family: "'IBM Plex Mono', ui-monospace, monospace" },
+  margin: { l:54, r:16, t:14, b:42 },
+  xaxis: { gridcolor: '#1d242e', zerolinecolor: '#2a3340', tickfont: {size:10} },
+  yaxis: { gridcolor: '#1d242e', zerolinecolor: '#2a3340', tickfont: {size:10} },
+  legend: { orientation:'h', y:-0.2, font:{size:11} },
+  hoverlabel: { bgcolor:'#0a0e13', bordercolor:'#2a3340', font:{family:"'IBM Plex Mono', monospace", size:12} },
+};
+const CFG = { displayModeBar: false, responsive: true };
+const POS_COLOR = { QB:'#4d8dff', RB:'#46d182', WR:'#ecb13e', TE:'#b889ff', K:'#8a97ab', DEF:'#8a97ab' };
+const DISC = '#35c7e0', PREM = '#ff8b5e';
+
+const fmt = {
+  val: v => v == null ? '—' : '$' + (v/1000).toFixed(1) + 'k',
+  num: v => v == null ? '—' : Math.round(v).toLocaleString(),
+  signed: v => v == null ? '—' : (v>=0?'+':'') + Math.round(v).toLocaleString(),
+  pct1: v => v == null ? '—' : (v*100).toFixed(1) + '%',
+  hhi: v => v == null ? '—' : v.toFixed(3),
+};
+const lastName = n => (n||'').split(/\s+/).slice(-1)[0];
+
+/* market price = FC when present, else FP (with a flag the UI can show) */
+const priceOf = p => p.fc_value ?? p.fp_value_2qb ?? null;
+const intrinsicOf = p => p.vbd_value ?? p.vorp ?? null;
+
+/* ─────────────── TAPE — FC price + 30-day FC drift ─────────────── */
+function buildTape(players) {
+  if (!players?.length) return;
+  const items = players.slice(0, 22).map(p => {
+    const pos = p.position ?? 'RB';
+    const col = POS_COLOR[pos] ?? '#8a97ab';
+    const trend = p.fc_trend_30day;
+    const tCol = trend == null ? '#8a97ab' : trend > 50 ? DISC : trend < -50 ? PREM : '#8a97ab';
+    const tTxt = trend == null ? '·' : (trend>=0?'▲':'▼') + Math.abs(Math.round(trend));
+    return `<div class="tape-item">
+      <span class="pos-badge" style="background:${col}22;color:${col}">${pos}</span>
+      <span class="name">${lastName(p.name)}</span>
+      <span class="val">${fmt.val(priceOf(p))}</span>
+      <span class="delta" style="color:${tCol}">${tTxt}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('tapeInner').innerHTML = items + items;
+}
+
+/* ─────────────── DATA ─────────────── */
+let leagueData = null;
+async function loadLeagues() {
+  try {
+    const r = await fetch('/api/leagues'); if (!r.ok) throw 0;
+    const d = await r.json();
+    const sel = document.getElementById('league');
+    sel.innerHTML = d.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    sel.addEventListener('change', () => loadLeague(sel.value));
+    if (d.length) loadLeague(d[0].id); else useDemoData();
+  } catch { useDemoData(); }
+}
+async function loadLeague(id) {
+  try {
+    const r = await fetch(`/api/league/${id}/summary`); if (!r.ok) throw 0;
+    leagueData = await r.json(); render(leagueData);
+  } catch { useDemoData(); }
+}
+
+/* ─────────────── DEMO DATA (real names so the plane tells the true story) ─────────────── */
+function useDemoData() {
+  // players: market price = fc_value, intrinsic = vbd_value (0–10k scale, comparable to FC)
+  const players = [
+    { name:'Christian McCaffrey', position:'RB', fp_value_2qb:4581, fc_value:4439, vbd_value:10000, ppg:21.2, age:30, fc_trend_30day:-220 },
+    { name:'Jonathan Taylor',    position:'RB', fp_value_2qb:6232, fc_value:5783, vbd_value:9091,  ppg:20.0, age:27, fc_trend_30day:140 },
+    { name:'Bijan Robinson',     position:'RB', fp_value_2qb:9558, fc_value:11059,vbd_value:8732,  ppg:19.5, age:24, fc_trend_30day:310 },
+    { name:'Jahmyr Gibbs',       position:'RB', fp_value_2qb:9013, fc_value:10456,vbd_value:8602,  ppg:19.3, age:24, fc_trend_30day:260 },
+    { name:'Puka Nacua',         position:'WR', fp_value_2qb:9141, fc_value:8848, vbd_value:8120,  ppg:19.8, age:25, fc_trend_30day:90 },
+    { name:"De'Von Achane",      position:'RB', fp_value_2qb:6247, fc_value:6279, vbd_value:7661,  ppg:18.1, age:24, fc_trend_30day:55 },
+    { name:'Ja\u2019Marr Chase', position:'WR', fp_value_2qb:11200,fc_value:11800,vbd_value:8980,  ppg:20.4, age:25, fc_trend_30day:180 },
+    { name:'Trey McBride',       position:'TE', fp_value_2qb:6100, fc_value:5400, vbd_value:7300,  ppg:15.9, age:25, fc_trend_30day:240 },
+    { name:'Lamar Jackson',      position:'QB', fp_value_2qb:11200,fc_value:10600,vbd_value:7100,  ppg:24.6, age:28, fc_trend_30day:-40 },
+    { name:'Josh Allen',         position:'QB', fp_value_2qb:11900,fc_value:12100,vbd_value:6800,  ppg:24.1, age:29, fc_trend_30day:20 },
+    { name:'Travis Kelce',       position:'TE', fp_value_2qb:3800, fc_value:4300, vbd_value:5200,  ppg:12.8, age:35, fc_trend_30day:-380 },
+    { name:'Derrick Henry',      position:'RB', fp_value_2qb:5200, fc_value:4600, vbd_value:6400,  ppg:17.2, age:31, fc_trend_30day:-150 },
+    { name:'Sam LaPorta',        position:'TE', fp_value_2qb:5100, fc_value:5600, vbd_value:4800,  ppg:11.4, age:24, fc_trend_30day:80 },
+    { name:'Marvin Harrison Jr.',position:'WR', fp_value_2qb:7400, fc_value:8200, vbd_value:5100,  ppg:13.1, age:23, fc_trend_30day:200 },
+    { name:'C.J. Stroud',        position:'QB', fp_value_2qb:8400, fc_value:9200, vbd_value:5600,  ppg:18.9, age:23, fc_trend_30day:120 },
+    { name:'Garrett Wilson',     position:'WR', fp_value_2qb:8100, fc_value:7600, vbd_value:6300,  ppg:15.7, age:25, fc_trend_30day:-30 },
+  ];
+
+  // teams: market = sum FC, intrinsic = sum VBD (per-position FC weights for allocation/HHI)
+  const teams = [
+    mkTeam(1,'Mahomes to Kelce','Travis B.',9,4,  {QB:9800,RB:14600,WR:15800,TE:6600}, {QB:6200,RB:11200,WR:9800,TE:5400}, 28.1),
+    mkTeam(2,'The Purdy Good Team','Emma C.',8,5, {QB:8600,RB:11200,WR:16400,TE:6700}, {QB:5400,RB:8900,WR:11600,TE:5100}, 25.6),
+    mkTeam(3,'Room Temperature IQ','Marcus D.',7,6,{QB:10200,RB:9800,WR:14600,TE:7100},{QB:6800,RB:7200,WR:10100,TE:4900}, 26.8),
+    mkTeam(4,'RotoWorld Refugees','Priya S.',7,6, {QB:8900,RB:12100,WR:12800,TE:6500}, {QB:5200,RB:9400,WR:8800,TE:4600}, 24.2),
+    mkTeam(5,'Waiver Wire Warlocks','Leo T.',6,7, {QB:8100,RB:10400,WR:13200,TE:6200},{QB:4900,RB:7600,WR:8200,TE:4200}, 27.3),
+    mkTeam(6,'Zero RB Believers','Sofia R.',6,7,  {QB:8600,RB:7200,WR:16900,TE:3800}, {QB:5100,RB:4800,WR:11900,TE:2400}, 23.8),
+    mkTeam(7,'My Sleeper Account','James K.',5,8, {QB:7400,RB:9600,WR:11200,TE:5600}, {QB:4200,RB:6900,WR:7100,TE:3800}, 22.4),
+    mkTeam(8,'Rebuild Arc','Nia F.',3,10,         {QB:5100,RB:9200,WR:10800,TE:4500}, {QB:2900,RB:6400,WR:6900,TE:2900}, 22.9),
+  ];
+
+  buildTape(players);
+  const sel = document.getElementById('league'); if (sel) sel.innerHTML = '<option>Sample · 14-Team</option>';
+  render({ teams, players, league:{ name:'Sample · 14-Team', teams:14, superflex:false, te_premium:0.5, ppr:0.5 }, _demo:true });
+}
+function mkTeam(id, name, owner, wins, losses, fcByPos, vbdByPos, age) {
+  const fc = Object.values(fcByPos).reduce((a,b)=>a+b,0);
+  const vbd = Object.values(vbdByPos).reduce((a,b)=>a+b,0);
+  return { id, name, owner, wins, losses,
+    fc_value: fc, vbd_value: vbd,
+    qb_v:fcByPos.QB, rb_v:fcByPos.RB, wr_v:fcByPos.WR, te_v:fcByPos.TE,
+    hhi: hhiFrom(Object.values(fcByPos)), age_score: age };
+}
+function hhiFrom(parts){ const s=parts.reduce((a,b)=>a+b,0); if(!s) return null; return parts.reduce((a,b)=>a+(b/s)**2,0); }
+
+/* ─────────────── RENDER ─────────────── */
+function render(data) {
+  const { teams, players, league } = data;
+  const page = document.getElementById('page');
+
+  // scoring badge
+  const sb = document.getElementById('scoringBadge');
+  if (league) sb.innerHTML = `<b>${league.teams ?? '—'}T</b> ${league.superflex?'· SF':''} ${league.te_premium?('· TE+'+league.te_premium):''} ${league.ppr!=null?('· '+league.ppr+' PPR'):''}`;
+
+  // Market (FC) and intrinsic (VBD) live on different bases once summed across a roster
+  // (VBD is replacement-adjusted, so bench players sum toward 0 while their FC does not).
+  // A raw $ difference is therefore meaningless at the team level — we use a scale-free
+  // "production per market dollar" index, benchmarked to the value-weighted league average.
+  const priced = teams.map(t => ({ ...t, mkt: t.fc_value ?? t.fp_value ?? t.total_value, intr: t.vbd_value ?? null }));
+  const sumMkt = priced.reduce((s,t)=>s+(t.intr!=null?(t.mkt||0):0),0);
+  const sumIntr = priced.reduce((s,t)=>s+(t.intr||0),0);
+  const effLeague = (sumMkt && sumIntr) ? sumIntr/sumMkt : null;       // league prod-per-$
+  priced.forEach(t => {
+    const eff = (t.intr!=null && t.mkt) ? t.intr/t.mkt : null;          // team prod-per-$
+    t.gapPct = (eff!=null && effLeague) ? eff/effLeague - 1 : null;     // +ve = underpriced vs peers
+  });
+  const sorted = [...priced].sort((a,b)=> (b.intr ?? -1) - (a.intr ?? -1));
+  const me = sorted[0];
+  const avgMkt = priced.reduce((s,t)=>s+(t.mkt||0),0)/priced.length;
+  const gapPct = me.gapPct;
+  const hasModelMetrics = teams.some(t => t.sharpe != null || t.alpha != null);
+
+  page.innerHTML = `
+    <div class="grid-4">
+      ${kpi('accent','Market Value','FantasyCalc settings-aware market price, summed across the roster',
+            fmt.val(me.mkt),
+            `<span class="delta-tag ${me.mkt>avgMkt?'up':'down'}">${me.mkt>avgMkt?'▲':'▼'} ${fmt.pct1((me.mkt-avgMkt)/avgMkt)}</span><span>vs league avg ${fmt.val(avgMkt)}</span>`)}
+      ${kpi('good','Intrinsic Value','Production value (VBD) under this league\'s exact scoring — the fundamentals, not the price',
+            me.intr!=null? fmt.val(me.intr) : '—',
+            `<span>VBD · scored on league rules</span>`)}
+      ${kpi(gapPct==null?'warn':gapPct>=0?'disc':'prem','Valuation Gap','Production per market dollar vs the league average (value-weighted). Positive = this roster buys production more cheaply than peers',
+            gapPct==null?'—':(gapPct>=0?'+':'')+(gapPct*100).toFixed(1)+'%',
+            gapPct==null?'<span>needs VBD + FC</span>':`<span class="delta-tag ${gapPct>=0?'disc':'prem'}">${gapPct>=0?'DISCOUNT':'PREMIUM'}</span><span>vs league prod-per-$</span>`)}
+      ${kpi(me.hhi>0.25?'bad':me.hhi>0.18?'warn':'good','Concentration','Herfindahl index of positional value (on FC weights). Higher = value packed into fewer positions',
+            fmt.hhi(me.hhi),
+            `<span class="delta-tag ${me.hhi>0.25?'down':me.hhi>0.18?'flat':'up'}">${me.hhi>0.25?'HIGH':me.hhi>0.18?'MODERATE':'BALANCED'}</span><span>positional spread</span>`)}
+    </div>
+
+    <div class="eyebrow">Valuation plane — intrinsic vs market</div>
+    <div class="grid-hero">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Valuation Plane <span class="panel-sub">— production (VBD) vs market price (FC). Parity = fairly priced; distance off the line = the edge.</span></h2>
+        </div>
+        <div id="planeChart" style="height:440px"></div>
+        <div style="margin-top:8px;font-size:11px;color:var(--ink-faint);display:flex;gap:18px;flex-wrap:wrap">
+          <span><span style="color:${DISC}">●</span> above line — production &gt; price (buy-side)</span>
+          <span><span style="color:${PREM}">●</span> below line — price &gt; production (sell-side)</span>
+          <span>marker size = mispricing magnitude</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Most Mispriced <span class="panel-sub">— |VBD − FC|</span></h2></div>
+        <div class="misprice-list" id="mispriceList"></div>
+      </div>
+    </div>
+
+    <div class="eyebrow">Allocation &amp; risk</div>
+    <div class="grid-alloc">
+      <div class="panel">
+        <div class="panel-head"><h2>Positional Allocation <span class="panel-sub">— share of market value</span></h2></div>
+        <div id="allocPie" style="height:230px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Concentration <span class="panel-sub">— FC weights</span></h2></div>
+        <div id="concBody"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Roster Age / Duration <span class="panel-sub">— win-now ↔ win-later</span></h2></div>
+        <div id="durBody"></div>
+      </div>
+    </div>
+
+    <div class="eyebrow">League book</div>
+    <div class="panel">
+      <div class="panel-head"><h2>Team Diagnostics <span class="panel-sub">— ranked by intrinsic value · click a row for roster detail</span></h2></div>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Team</th>
+          <th class="num">Market (FC)</th>
+          <th class="num">Intrinsic (VBD)</th>
+          <th class="num" data-tip="Production per market dollar vs league average. Positive = underpriced relative to peers">Gap</th>
+          <th class="num" data-tip="Herfindahl index of positional value concentration">HHI</th>
+          <th class="num">Avg Age</th>
+          ${hasModelMetrics?'<th class="num">Sharpe</th><th class="num">Alpha</th>':''}
+          <th class="num">Record</th>
+        </tr></thead>
+        <tbody>${diagRows(sorted, avgMkt, hasModelMetrics)}</tbody>
+      </table>
+    </div>
+
+    ${hasModelMetrics? '' : `
+    <div class="section-gap"></div>
+    <div class="grid-2">
+      ${gatedCard('Risk-Adjusted Value (Sharpe)','VORP per unit of weekly scoring variance','Unlocks once weekly outcomes land','python points_model.py needs per-week variance (sd_pts_w8) — not in the season-level views yet')}
+      ${gatedCard('Manager Alpha','MAE reduction over the expert-rank baseline on historical moves','Unlocks from Model Lab','run backtest_baselines.py → export_modellab.py, then the API can join skill scores')}
+    </div>`}
+
+    <div class="section-gap"></div>
+    <div class="panel" id="rosterPanel" style="display:none">
+      <div class="panel-head"><h2 id="rosterTitle">Roster detail</h2></div>
+      <div id="rosterContent"></div>
+    </div>
+
+    <div class="method">
+      <div><div class="m-term">FC — Market</div><div class="m-def"><b>FantasyCalc</b> settings-aware price. The primary value axis: it knows this league\'s superflex / TE-premium / PPR, so it\'s comparable across rosters.</div></div>
+      <div><div class="m-term">VBD — Intrinsic</div><div class="m-def">Production scored under the league\'s <b>exact</b> rules, then replacement-adjusted (VORP). TE-premium falls out of real receptions — no flat multiplier.</div></div>
+      <div><div class="m-term">FP — Reference only</div><div class="m-def"><b>FantasyPros ECR</b> is an exponential transform of ordinal ranks. Used for context, never for cardinal math (gap, HHI, concentration) — those run on FC/VBD.</div></div>
+      <div><div class="m-term">Model-dependent</div><div class="m-def">Sharpe, manager alpha, and lineup <b>surplus</b> stay gated until the variance/backtest/solver pipelines exist. Shown as locked, not faked.</div></div>
+    </div>`;
+
+  drawPlane(players);
+  drawMispriceRail(players);
+  drawAllocation(me);
+  drawConcentration(me);
+  drawDuration(me);
+}
+
+function kpi(kind, label, tip, value, sub) {
+  return `<div class="kpi kpi-${kind}">
+    <div class="kpi-label" ${tip?`data-tip="${tip}"`:''}>${label}${tip?' <span style="color:var(--ink-faint)">ⓘ</span>':''}</div>
+    <div class="kpi-value">${value}</div>
+    <div class="kpi-sub">${sub}</div>
+  </div>`;
+}
+function gatedCard(title, sub, lock, msg) {
+  return `<div class="panel gated">
+    <div class="panel-head"><h2>${title} <span class="panel-sub">— ${sub}</span></h2></div>
+    <div style="height:120px"></div>
+    <div class="gate-veil"><div class="gv-lock">🔒 ${lock}</div><div class="gv-msg">${msg}</div></div>
+  </div>`;
+}
+
+function diagRows(sorted, avgMkt, hasModel) {
+  return sorted.map((t,i) => {
+    const g = t.gapPct;
+    return `<tr class="clickable" onclick="showRoster(${t.id})">
+      <td style="font-weight:700;color:${i<3?'var(--ink)':'var(--ink-dim)'}">${i+1}</td>
+      <td style="font-weight:600">${t.name}<div style="font:11px var(--mono);color:var(--ink-faint)">${t.owner??''}</div></td>
+      <td class="num">${fmt.val(t.mkt)}</td>
+      <td class="num">${t.intr!=null?fmt.val(t.intr):'—'}</td>
+      <td class="num ${g==null?'':g>=0?'arb-pos':'arb-neg'}">${g==null?'—':(g>=0?'+':'')+(g*100).toFixed(1)+'%'}</td>
+      <td class="num" style="color:${t.hhi>0.25?PREM:t.hhi>0.18?'var(--warn)':'var(--ink)'}">${fmt.hhi(t.hhi)}</td>
+      <td class="num" style="color:${t.age_score<=24?DISC:t.age_score>=29?PREM:'var(--ink)'}">${t.age_score?.toFixed(1)??'—'}</td>
+      ${hasModel?`<td class="num">${t.sharpe?.toFixed(2)??'—'}</td><td class="num" style="color:${(t.alpha??0)>0?'var(--good)':'var(--bad)'}">${t.alpha!=null?(t.alpha*100).toFixed(1)+'%':'—'}</td>`:''}
+      <td class="num">${t.wins}-${t.losses}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ─────────────── HERO: VALUATION PLANE ─────────────── */
+function drawPlane(players) {
+  const pts = (players||[]).map(p => ({
+    name:p.name, pos:p.position, x:priceOf(p), y:intrinsicOf(p),
+  })).filter(p => p.x!=null && p.y!=null);
+  if (!pts.length) { document.getElementById('planeChart').innerHTML = emptyNote('No FC/VBD pairs to plot.'); return; }
+
+  const lo = Math.min(...pts.map(p=>Math.min(p.x,p.y)));
+  const hi = Math.max(...pts.map(p=>Math.max(p.x,p.y)));
+  const pad = (hi-lo)*0.06 || 1;
+  const maxResid = Math.max(...pts.map(p=>Math.abs(p.y-p.x))) || 1;
+
+  const traces = Object.keys(POS_COLOR).filter(pos => pts.some(p=>p.pos===pos)).map(pos => {
+    const sub = pts.filter(p=>p.pos===pos);
+    return {
+      name: pos, mode:'markers+text', type:'scatter',
+      x: sub.map(p=>p.x), y: sub.map(p=>p.y),
+      text: sub.map(p=>lastName(p.name)),
+      textposition:'top center', textfont:{ size:9, color:'#5b6677', family:"'IBM Plex Mono', monospace" },
+      marker: {
+        color: sub.map(p => (p.y-p.x)>=0 ? DISC : PREM),
+        size: sub.map(p => 9 + (Math.abs(p.y-p.x)/maxResid)*22),
+        opacity: 0.9, line:{ color: POS_COLOR[pos], width:2 },
+        symbol: 'circle',
+      },
+      customdata: sub.map(p => [p.pos, p.y-p.x]),
+      hovertemplate: '<b>%{text}</b> · %{customdata[0]}<br>FC price: $%{x:,.0f}<br>VBD value: $%{y:,.0f}<br>residual: %{customdata[1]:+,.0f}<extra></extra>',
+    };
+  });
+
+  Plotly.newPlot('planeChart', traces, {
+    ...PL, margin:{ l:64, r:18, t:14, b:48 }, showlegend:true,
+    legend:{ orientation:'h', y:1.08, x:0, font:{size:10} },
+    xaxis:{ ...PL.xaxis, title:{text:'Market price — FC ($)', font:{size:11}}, tickformat:'$,.0f', range:[lo-pad, hi+pad] },
+    yaxis:{ ...PL.yaxis, title:{text:'Intrinsic value — VBD ($)', font:{size:11}}, tickformat:'$,.0f', range:[lo-pad, hi+pad] },
+    shapes:[{ type:'line', x0:lo-pad, y0:lo-pad, x1:hi+pad, y1:hi+pad, line:{ color:'#3a4555', width:1.5, dash:'dash' } }],
+    annotations:[
+      { x:lo+pad, y:hi, text:'underpriced', showarrow:false, font:{size:10, color:DISC}, xanchor:'left' },
+      { x:hi, y:lo+pad, text:'overpriced', showarrow:false, font:{size:10, color:PREM}, xanchor:'right' },
+    ],
+  }, CFG);
+}
+
+function drawMispriceRail(players) {
+  const rows = (players||[]).map(p => ({ name:p.name, pos:p.position, r:(intrinsicOf(p)??0)-(priceOf(p)??0), priced: priceOf(p)!=null && intrinsicOf(p)!=null }))
+    .filter(p=>p.priced).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r)).slice(0,8);
+  const max = Math.max(...rows.map(r=>Math.abs(r.r)),1);
+  document.getElementById('mispriceList').innerHTML = rows.map(r => {
+    const col = r.r>=0?DISC:PREM, w = Math.round(Math.abs(r.r)/max*100);
+    return `<div class="mp-row">
+      <span class="pos pos-${r.pos}">${r.pos}</span>
+      <div><div class="mp-name">${r.name}</div><div class="mp-meta">${r.r>=0?'underpriced':'market premium'}</div></div>
+      <div class="mp-resid" style="color:${col}">${fmt.signed(r.r)}</div>
+      <div class="mp-bar"><div style="width:${w}%;background:${col}"></div></div>
+    </div>`;
+  }).join('') || emptyNote('No priced players.');
+}
+
+/* ─────────────── ALLOCATION / CONCENTRATION / DURATION ─────────────── */
+function posWeights(t){ return { QB:t.qb_v||0, RB:t.rb_v||0, WR:t.wr_v||0, TE:t.te_v||0 }; }
+function drawAllocation(t) {
+  const w = posWeights(t), keys = Object.keys(w);
+  Plotly.newPlot('allocPie', [{
+    type:'pie', values:keys.map(k=>w[k]), labels:keys, hole:0.58, sort:false,
+    marker:{ colors: keys.map(k=>POS_COLOR[k]), line:{color:'#0f1318', width:2} },
+    textinfo:'label+percent', textfont:{ size:11, color:'#cdd6e3', family:"'IBM Plex Mono', monospace" },
+    hovertemplate:'<b>%{label}</b><br>$%{value:,.0f} · %{percent}<extra></extra>',
+  }], { paper_bgcolor:'rgba(0,0,0,0)', margin:{l:6,r:6,t:6,b:6}, showlegend:false, font:{color:'#8a97ab'} }, CFG);
+}
+function drawConcentration(t) {
+  const w = posWeights(t), total = Object.values(w).reduce((a,b)=>a+b,0);
+  const entries = Object.entries(w).sort((a,b)=>b[1]-a[1]);
+  const topShare = total? entries[0][1]/total : 0;
+  const segs = Math.round((t.hhi??0)/0.40*10);
+  const segCol = t.hhi>0.25?PREM:t.hhi>0.18?'var(--warn)':'var(--accent)';
+  document.getElementById('concBody').innerHTML = `
+    <div class="meter-label"><span>HHI</span><b>${fmt.hhi(t.hhi)}</b></div>
+    <div class="hhi-track">${Array.from({length:10},(_,i)=>`<div class="hhi-seg" style="background:${i<segs?segCol:'var(--line)'}"></div>`).join('')}</div>
+    <div style="margin-top:14px">
+      <div class="stat-line"><span class="sl-label">Largest position</span><span class="sl-val">${entries[0][0]} · ${fmt.pct1(topShare)}</span></div>
+      <div class="stat-line"><span class="sl-label">Top-2 share</span><span class="sl-val">${fmt.pct1(total?(entries[0][1]+entries[1][1])/total:0)}</span></div>
+      <div class="stat-line"><span class="sl-label">Effective positions</span><span class="sl-val">${t.hhi?(1/t.hhi).toFixed(1):'—'} / 4</span></div>
+    </div>`;
+}
+function drawDuration(t) {
+  const age = t.age_score ?? null;
+  // duration analog: younger roster = longer horizon (win-later), older = shorter (win-now)
+  const lane = age==null?50:Math.max(0,Math.min(100,(31-age)/(31-22)*100));
+  const tag = age==null?'—':age<=24.5?'Win-later':age>=28?'Win-now':'Balanced';
+  const tagCol = age==null?'var(--ink-dim)':age<=24.5?DISC:age>=28?PREM:'var(--warn)';
+  document.getElementById('durBody').innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
+      <span style="font:700 26px/1 var(--display);color:var(--ink)">${age?.toFixed(1)??'—'}</span>
+      <span style="font:11px var(--mono);color:var(--ink-dim)">avg age</span>
+      <span class="delta-tag ${age<=24.5?'disc':age>=28?'prem':'flat'}" style="margin-left:auto">${tag}</span>
+    </div>
+    <div style="height:8px;background:linear-gradient(90deg,${PREM},var(--warn),${DISC});border-radius:4px;position:relative">
+      <div style="position:absolute;top:-3px;left:calc(${lane}% - 7px);width:14px;height:14px;border-radius:50%;background:var(--ink);border:2px solid var(--bg)"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font:10px var(--mono);color:var(--ink-faint);margin-top:6px"><span>win-now (older)</span><span>win-later (younger)</span></div>
+    <div class="stat-line" style="margin-top:12px"><span class="sl-label">Duration read</span><span class="sl-val" style="color:${tagCol}">${tag}</span></div>`;
+}
+
+function emptyNote(msg){ return `<div style="padding:36px;text-align:center;color:var(--ink-faint);font-size:12px">${msg}</div>`; }
+
+/* ─────────────── ROSTER DETAIL ─────────────── */
+window.showRoster = function(id) {
+  const panel = document.getElementById('rosterPanel');
+  const content = document.getElementById('rosterContent');
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior:'smooth', block:'start' });
+
+  const team = (leagueData?.teams || []).find(t=>t.id===id);
+  const roster = (team?.roster) || demoRoster();
+  const totalFC = roster.reduce((s,p)=>s+(p.fc_value??0),0);
+  const totalVBD = roster.reduce((s,p)=>s+(p.vbd_value??0),0);
+  const maxFC = Math.max(...roster.map(p=>p.fc_value??0),1);
+  const posCounts = {}; roster.forEach(p=>posCounts[p.position]=(posCounts[p.position]??0)+(p.fc_value??0));
+
+  document.getElementById('rosterTitle').textContent = team ? `${team.name} — roster detail` : 'Roster detail (sample)';
+
+  const rows = roster.map(p => {
+    const fc=p.fc_value, vbd=p.vbd_value, resid=(vbd??0)-(fc??0);
+    const sig = resid>400?'BUY':resid<-400?'SELL':'HOLD';
+    const sigClass = sig==='BUY'?'signal-buy':sig==='SELL'?'signal-sell':'signal-hold';
+    const bar=Math.round((fc??0)/maxFC*100), col=POS_COLOR[p.position]??'#4d8dff';
+    return `<tr>
+      <td><span class="pos pos-${p.position}">${p.position}</span></td>
+      <td style="font-weight:600">${p.name}</td>
+      <td class="num"><div class="value-bar-wrap">${fmt.val(fc)}<div class="value-bar"><div class="value-bar-fill" style="width:${bar}%;background:${col}"></div></div></div></td>
+      <td class="num">${fmt.val(vbd)}</td>
+      <td class="num ${resid>=0?'arb-pos':'arb-neg'}">${fmt.signed(resid)}</td>
+      <td class="num" style="color:${p.fc_trend_30day>50?DISC:p.fc_trend_30day<-50?PREM:'var(--ink-dim)'}">${p.fc_trend_30day!=null?fmt.signed(p.fc_trend_30day):'—'}</td>
+      <td class="num" style="color:${p.age<=24?DISC:p.age>=30?PREM:'var(--ink)'}">${p.age??'—'}</td>
+      <td><span class="signal ${sigClass}">${sig}</span></td>
+    </tr>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="summary-row">
+      <div class="sum-pill"><div class="sp-label">Market (FC)</div><div class="sp-val">${fmt.val(totalFC)}</div></div>
+      <div class="sum-pill"><div class="sp-label">Intrinsic (VBD)</div><div class="sp-val">${fmt.val(totalVBD)}</div></div>
+      <div class="sum-pill"><div class="sp-label">Gap</div><div class="sp-val" style="color:${totalVBD-totalFC>=0?DISC:PREM}">${fmt.signed(totalVBD-totalFC)}</div></div>
+      <div class="sum-pill"><div class="sp-label">Players</div><div class="sp-val">${roster.length}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:240px 1fr;gap:20px;align-items:start">
+      <div>
+        <div style="font:700 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--ink-dim);margin-bottom:10px">Allocation (FC)</div>
+        <div id="rosterPie" style="height:210px"></div>
+        <div style="font-size:11px;color:var(--ink-faint);margin-top:8px;line-height:1.5">Deployable-lineup <b style="color:var(--ink-dim)">surplus</b> needs the Hungarian solver — pending build item A.</div>
+      </div>
+      <table>
+        <thead><tr><th>Pos</th><th>Player</th><th class="num">FC</th><th class="num">VBD</th><th class="num">Gap</th><th class="num">30d</th><th class="num">Age</th><th>Signal</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  Plotly.newPlot('rosterPie', [{
+    type:'pie', values:Object.values(posCounts), labels:Object.keys(posCounts), hole:0.55, sort:false,
+    marker:{ colors:Object.keys(posCounts).map(p=>POS_COLOR[p]??'#8a97ab'), line:{color:'#0f1318',width:2} },
+    textinfo:'label+percent', textfont:{size:11,color:'#cdd6e3',family:"'IBM Plex Mono', monospace"},
+    hovertemplate:'<b>%{label}</b><br>$%{value:,.0f}<extra></extra>',
+  }], { paper_bgcolor:'rgba(0,0,0,0)', margin:{l:6,r:6,t:6,b:6}, showlegend:false, font:{color:'#8a97ab'} }, CFG);
+};
+function demoRoster(){ return [
+  { name:'Lamar Jackson', position:'QB', fc_value:10600, vbd_value:7100, age:28, fc_trend_30day:-40 },
+  { name:'Christian McCaffrey', position:'RB', fc_value:4439, vbd_value:10000, age:30, fc_trend_30day:-220 },
+  { name:'Puka Nacua', position:'WR', fc_value:8848, vbd_value:8120, age:25, fc_trend_30day:90 },
+  { name:'Bijan Robinson', position:'RB', fc_value:11059, vbd_value:8732, age:24, fc_trend_30day:310 },
+  { name:'Trey McBride', position:'TE', fc_value:5400, vbd_value:7300, age:25, fc_trend_30day:240 },
+  { name:'Garrett Wilson', position:'WR', fc_value:7600, vbd_value:6300, age:25, fc_trend_30day:-30 },
+]; }
+
+/* ─────────────── INIT ─────────────── */
+loadLeagues();
+</script>
+</body>
+</html>
