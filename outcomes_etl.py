@@ -190,7 +190,7 @@ def load_weekly(seasons: list[int]) -> pd.DataFrame:
         df = df[(df.season_type == "REG") & (df.position.isin(POSITIONS))]
         frames.append(df)
         print(f"  {s}: {len(df)} REG offense player-weeks")
-    out = pd.concat(frames, ignore_index=True)
+    out = pd.concat(frames, ignore_index=True).copy()
     out["is_te"] = (out.position == "TE").astype(float)
     return out
 
