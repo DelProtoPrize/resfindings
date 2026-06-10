@@ -110,8 +110,22 @@ KEEP = ["fp_id", "merge_name", "player", "pos", "team", "age", "draft_year",
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args],
-                          check=True, capture_output=True, text=True).stdout
+    """Git plumbing output (logs, refs): explicit utf-8, never locale-decoded.
+    On Windows, text=True would decode with cp1252 and mangle anything
+    non-ASCII; pinning the encoding makes Linux and Windows behave the same."""
+    return subprocess.run(["git", "-C", str(repo), *args], check=True,
+                          capture_output=True).stdout.decode(
+                              "utf-8", errors="replace")
+
+
+def _git_file(repo: Path, ref_path: str) -> str:
+    """File content via git show: decode utf-8-sig, which strips a UTF-8 BOM
+    if present. The 2019-04-06 commit's CSV starts with EF BB BF; under
+    Windows cp1252 that becomes the literal 'ï»¿' glued onto the first column
+    name, breaking the alias map."""
+    raw = subprocess.run(["git", "-C", str(repo), "show", ref_path],
+                         check=True, capture_output=True).stdout
+    return raw.decode("utf-8-sig", errors="replace")
 
 
 def ensure_repo(workdir: Path) -> Path:
@@ -144,10 +158,12 @@ def load_snapshot(repo: Path, sha: str, commit_date: str) -> pd.DataFrame | None
     """None = file absent at this commit. Raises if a recognized file yields
     zero rows (the v1 silent-swallow)."""
     try:
-        raw = _git(repo, "show", f"{sha}:{FILE_PATH}")
+        raw = _git_file(repo, f"{sha}:{FILE_PATH}")
     except subprocess.CalledProcessError:
         return None
     df = pd.read_csv(io.StringIO(raw))
+    # belt-and-suspenders: strip any BOM remnant that survived a bad decode
+    df.columns = [c.lstrip("\ufeff\u00ef\u00bb\u00bf").strip() for c in df.columns]
     df = df.rename(columns={c: RENAMES[c] for c in df.columns if c in RENAMES})
     df = df.loc[:, ~df.columns.duplicated()]
     for col in KEEP:
