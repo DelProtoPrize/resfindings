@@ -22,6 +22,9 @@ const INK = '#dde4ee', GRID = '#1e2530';
 
 let currentLeague = null;
 let currentRows = [];
+let prodByRoster = null;   // roster_id -> production_vbd (null = endpoint absent)
+let prodTotal = 0;
+let valueTotal = 0;
 
 /* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
 function setKpi(id, value, sub, tone) {
@@ -35,6 +38,7 @@ function setKpi(id, value, sub, tone) {
 }
 
 const hhiTone = (h) => (h > 0.2 ? 'kpi-bad' : h > 0.15 ? 'kpi-warn' : 'kpi-good');
+const pctShare = (x, total) => (total > 0 && x != null ? ((x / total) * 100).toFixed(1) + '%' : '–');
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : null;
@@ -42,9 +46,9 @@ const median = (xs) => {
 
 function leagueKpis(rows) {
   if (!rows.length) return;
-  const total = rows.reduce((s, d) => s + (d.team_value || 0), 0);
+  valueTotal = rows.reduce((s, d) => s + (d.team_value || 0), 0);
   const top = rows.find((d) => d.value_rank === 1) || rows[0];
-  setKpi('kpiPortfolio', fmt(Math.round(total)),
+  setKpi('kpiPortfolio', fmt(Math.round(valueTotal)),
     `<span class="delta-tag flat">LEAGUE</span><span>market cap · top: ${top.owner_name || 'Roster ' + top.roster_id}</span>`,
     'kpi-accent');
   const med = median(rows.map((d) => Number(d.hhi)));
@@ -52,6 +56,34 @@ function leagueKpis(rows) {
   setKpi('kpiHhi', med != null ? med.toFixed(3) : '–',
     `<span class="delta-tag flat">LEAGUE</span><span>median · most concentrated: ${hi.owner_name || 'Roster ' + hi.roster_id} (${Number(hi.hhi).toFixed(3)})</span>`,
     med != null ? hhiTone(med) : null);
+
+  // Value Share — league leader by default ("league leader per metric").
+  setKpi('kpiValueShare', pctShare(top.team_value, valueTotal),
+    `<span class="delta-tag up">LEADER</span><span>${top.owner_name || 'Roster ' + top.roster_id} · click a team for its share</span>`,
+    'kpi-accent');
+
+  // Production Share — league leader, from the /production endpoint.
+  if (prodByRoster) {
+    let leadId = null, leadV = -1;
+    for (const [rid, v] of Object.entries(prodByRoster)) {
+      if (v > leadV) { leadV = v; leadId = Number(rid); }
+    }
+    const leadMeta = rows.find((d) => d.roster_id === leadId) || {};
+    setKpi('kpiProdShare', pctShare(leadV, prodTotal),
+      `<span class="delta-tag up">LEADER</span><span>${leadMeta.owner_name || 'Roster ' + leadId} · share of league VBD</span>`,
+      'kpi-good');
+  } else {
+    setKpi('kpiProdShare', '–',
+      `<span class="delta-tag todo">UNWIRED</span><span>add /leagues/:id/production (see server patch)</span>`,
+      null);
+  }
+}
+
+function shares(meta) {
+  const vShare = valueTotal > 0 ? (meta.team_value || 0) / valueTotal : null;
+  const pShare = prodByRoster && prodTotal > 0
+    ? (prodByRoster[meta.roster_id] || 0) / prodTotal : null;
+  return { vShare, pShare };
 }
 
 function rosterKpis(meta) {
@@ -62,6 +94,27 @@ function rosterKpis(meta) {
   setKpi('kpiHhi', h.toFixed(3),
     `<span class="delta-tag ${h > 0.2 ? 'down' : h > 0.15 ? 'flat' : 'up'}">${h > 0.2 ? 'HIGH' : h > 0.15 ? 'MOD' : 'LOW'}</span><span>${meta.owner_name || 'roster'} concentration</span>`,
     hhiTone(h));
+
+  const { vShare, pShare } = shares(meta);
+  setKpi('kpiValueShare', vShare != null ? (vShare * 100).toFixed(1) + '%' : '–',
+    `<span class="delta-tag flat">TEAM</span><span>${meta.owner_name || 'roster'} share of league value</span>`,
+    'kpi-accent');
+  if (pShare != null && vShare != null) {
+    // Production vs value gap = win-now vs rebuild tilt, in one number.
+    const gap = pShare - vShare;
+    const tag = gap > 0.01 ? 'up' : gap < -0.01 ? 'down' : 'flat';
+    // Cause-neutral labels: a negative gap means market value runs ahead of
+    // current production — could be youth, injury, or SF-QB scarcity. The
+    // sign is known; the cause needs the roster table to confirm.
+    const word = gap > 0.01 ? 'win-now tilt' : gap < -0.01 ? 'value ahead of production' : 'balanced';
+    setKpi('kpiProdShare', (pShare * 100).toFixed(1) + '%',
+      `<span class="delta-tag ${tag}">${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp vs value</span><span>${word}</span>`,
+      gap > 0.01 ? 'kpi-good' : gap < -0.01 ? 'kpi-warn' : 'kpi-accent');
+  } else {
+    setKpi('kpiProdShare', '–',
+      `<span class="delta-tag todo">UNWIRED</span><span>add /leagues/:id/production (see server patch)</span>`,
+      null);
+  }
 }
 
 /* ── Tape: win-now wedge = |VBD − FP|, the scatter's off-diagonal players.
@@ -105,6 +158,15 @@ async function render(leagueId) {
   document.getElementById('rosterPanel').style.display = 'none';
   const rows = await api(`/leagues/${leagueId}/diagnostics`);
   currentRows = rows;
+  // Production sums (graceful: cards stay dashed if the route isn't deployed).
+  prodByRoster = null; prodTotal = 0;
+  try {
+    const prod = await api(`/leagues/${leagueId}/production`);
+    if (Array.isArray(prod)) {
+      prodByRoster = Object.fromEntries(prod.map((p) => [p.roster_id, p.production_vbd || 0]));
+      prodTotal = prod.reduce((s, p) => s + (p.production_vbd || 0), 0);
+    }
+  } catch { /* endpoint absent — leave null */ }
   leagueKpis(rows);
 
   // Horizontal bar of team value, colored by HHI concentration (red = top-heavy).
@@ -208,7 +270,9 @@ async function drillRoster(rosterId) {
     <div class="stat">League rank<b>#${meta.value_rank}</b></div>
     <div class="stat">HHI concentration<b>${Number(meta.hhi).toFixed(3)}</b></div>
     <div class="stat">Assets valued<b>${valued.length}</b></div>
-    <div class="stat">Value-weighted age<b>${wAge ? wAge.toFixed(1) : '–'}</b></div>`;
+    <div class="stat">Value-weighted age<b>${wAge ? wAge.toFixed(1) : '–'}</b></div>
+    <div class="stat">Value share<b>${pctShare(meta.team_value, valueTotal)}</b></div>
+    <div class="stat">Production share<b>${prodByRoster ? pctShare(prodByRoster[rosterId], prodTotal) : '–'}</b></div>`;
 
   // Positional value allocation (donut).
   const byPos = {};
