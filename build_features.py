@@ -44,6 +44,12 @@ import sqlite3
 import numpy as np
 import pandas as pd
 
+# Bumped whenever the expected warehouse schema changes. Consumers
+# (backtest_baselines etc.) check this at import so a stale copy of THIS file
+# fails with instructions instead of a mid-run "no such table" traceback.
+SCHEMA_VERSION = 2   # v2: production features read from `outcomes` (canonical
+                     # league points), not the retired nflverse_weekly table
+
 HORIZONS = ("next_week", "ros", "next_season")
 WINDOWS = (4, 8, 17)
 
