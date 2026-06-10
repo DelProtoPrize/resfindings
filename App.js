@@ -1,11 +1,94 @@
 // app.js — fetch from our own API and render. The browser never touches Sleeper
 // or any external source; it only reads pre-computed analytics from our backend.
+//
+// CHANGES (KPI + tape wiring, presentation-only otherwise):
+//   1. KPI strip: Portfolio Value + HHI wired with REAL data, scoped — league
+//      aggregates by default, selected roster after a drill-in. Sharpe/Alpha
+//      stay untouched (their engines don't exist yet; cards remain PENDING).
+//   2. Ticker tape: wired from the /value endpoint already fetched for the
+//      triangulation scatter. Items = largest |VBD − FP| wedges (the
+//      off-diagonal players from the scatter). No FC arbitrage here — that
+//      endpoint doesn't serve fc values, so nothing is invented.
+//   3. All new DOM writes are null-safe: this file still works on the old
+//      index.html (no KPI/tape elements) without errors.
+//   4. Plotly grid/font constants aligned to the new design tokens.
+
 const api = (path) => fetch(`/api${path}`).then((r) => r.json());
 const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString());
 const leagueSel = document.getElementById('league');
 
+const POS_COLOR = { QB: '#3d80f5', RB: '#3ecf74', WR: '#e8a838', TE: '#b47cf5' };
+const INK = '#dde4ee', GRID = '#1e2530';
+
 let currentLeague = null;
 let currentRows = [];
+
+/* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
+function setKpi(id, value, sub, tone) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.classList.remove('unwired', 'kpi-accent', 'kpi-good', 'kpi-warn', 'kpi-bad');
+  if (tone) card.classList.add(tone);
+  card.querySelector('.kpi-value').textContent = value;
+  const subEl = card.querySelector('.kpi-sub');
+  if (subEl) subEl.innerHTML = sub;
+}
+
+const hhiTone = (h) => (h > 0.2 ? 'kpi-bad' : h > 0.15 ? 'kpi-warn' : 'kpi-good');
+const median = (xs) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : null;
+};
+
+function leagueKpis(rows) {
+  if (!rows.length) return;
+  const total = rows.reduce((s, d) => s + (d.team_value || 0), 0);
+  const top = rows.find((d) => d.value_rank === 1) || rows[0];
+  setKpi('kpiPortfolio', fmt(Math.round(total)),
+    `<span class="delta-tag flat">LEAGUE</span><span>market cap · top: ${top.owner_name || 'Roster ' + top.roster_id}</span>`,
+    'kpi-accent');
+  const med = median(rows.map((d) => Number(d.hhi)));
+  const hi = rows.reduce((a, b) => (Number(a.hhi) > Number(b.hhi) ? a : b));
+  setKpi('kpiHhi', med != null ? med.toFixed(3) : '–',
+    `<span class="delta-tag flat">LEAGUE</span><span>median · most concentrated: ${hi.owner_name || 'Roster ' + hi.roster_id} (${Number(hi.hhi).toFixed(3)})</span>`,
+    med != null ? hhiTone(med) : null);
+}
+
+function rosterKpis(meta) {
+  setKpi('kpiPortfolio', fmt(meta.team_value),
+    `<span class="delta-tag ${meta.value_rank <= 3 ? 'up' : 'flat'}">#${meta.value_rank}</span><span>${meta.owner_name || 'Roster ' + meta.roster_id} · click league to reset</span>`,
+    'kpi-accent');
+  const h = Number(meta.hhi);
+  setKpi('kpiHhi', h.toFixed(3),
+    `<span class="delta-tag ${h > 0.2 ? 'down' : h > 0.15 ? 'flat' : 'up'}">${h > 0.2 ? 'HIGH' : h > 0.15 ? 'MOD' : 'LOW'}</span><span>${meta.owner_name || 'roster'} concentration</span>`,
+    hhiTone(h));
+}
+
+/* ── Tape: win-now wedge = |VBD − FP|, the scatter's off-diagonal players.
+      Fed by the SAME /value rows the triangulation fetches — nothing extra,
+      nothing invented. Stays in placeholder state if the VBD layer is empty. */
+function wireTape(rows) {
+  const wrap = document.getElementById('tapeInner');
+  if (!wrap) return;
+  const usable = rows.filter((d) => d.fp_market_value != null && d.vbd_value != null);
+  if (!usable.length) return; // keep honest placeholder
+  const items = [...usable]
+    .map((d) => ({ ...d, wedge: d.vbd_value - d.fp_market_value }))
+    .sort((a, b) => Math.abs(b.wedge) - Math.abs(a.wedge))
+    .slice(0, 14)
+    .map((d) => {
+      const col = POS_COLOR[d.position] || '#8a95a8';
+      const wCol = d.wedge > 0 ? '#3ecf74' : '#f5605a';
+      return `<div class="tape-item">
+        <span class="pos-badge" style="background:${col}22;color:${col}">${d.position}</span>
+        <span class="name">${d.player_name}</span>
+        <span class="val">FP ${fmt(Math.round(d.fp_market_value))}</span>
+        <span class="delta" style="color:${wCol}" title="VBD minus FP market value">${d.wedge > 0 ? '+' : ''}${fmt(Math.round(d.wedge))} wedge</span>
+      </div>`;
+    }).join('');
+  wrap.innerHTML = items + items; // duplicated for seamless loop
+  wrap.classList.remove('unwired');
+}
 
 async function init() {
   const leagues = await api('/leagues');
@@ -22,6 +105,7 @@ async function render(leagueId) {
   document.getElementById('rosterPanel').style.display = 'none';
   const rows = await api(`/leagues/${leagueId}/diagnostics`);
   currentRows = rows;
+  leagueKpis(rows);
 
   // Horizontal bar of team value, colored by HHI concentration (red = top-heavy).
   Plotly.react('valueChart', [{
@@ -34,7 +118,7 @@ async function render(leagueId) {
   }], {
     margin: { l: 170, r: 40, t: 10, b: 40 },
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-    font: { color: '#e8eef5' }, xaxis: { gridcolor: '#232a33' },
+    font: { color: INK }, xaxis: { gridcolor: GRID },
   }, { displayModeBar: false, responsive: true });
 
   // Diagnostics table — rows are clickable to drill into a roster.
@@ -70,8 +154,9 @@ async function renderTriangulation(leagueId) {
   const panel = document.getElementById('triPanel');
   if (!rows.length) { panel.style.display = 'none'; return; }  // VBD layer not built yet
   panel.style.display = 'block';
+  wireTape(rows);
 
-  const colors = { QB: '#4f8cff', RB: '#5fd08a', WR: '#ffb454', TE: '#c98bff' };
+  const colors = { QB: '#3d80f5', RB: '#3ecf74', WR: '#e8a838', TE: '#b47cf5' };
   const maxv = Math.max(1, ...rows.map((d) => Math.max(d.fp_market_value || 0, d.vbd_value || 0)));
   const traces = ['QB', 'RB', 'WR', 'TE'].map((pos) => {
     const pr = rows.filter((d) => d.position === pos);
@@ -80,26 +165,26 @@ async function renderTriangulation(leagueId) {
       x: pr.map((d) => d.fp_market_value),
       y: pr.map((d) => d.vbd_value),
       text: pr.map((d) => `${d.player_name}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
-      marker: { color: colors[pos], size: 9, opacity: 0.82, line: { color: '#171c23', width: 1 } },
+      marker: { color: colors[pos], size: 9, opacity: 0.82, line: { color: '#161b22', width: 1 } },
       hovertemplate: '%{text}<br>FP %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
     };
   });
   traces.push({
     type: 'scatter', mode: 'lines', x: [0, maxv], y: [0, maxv],
-    line: { color: '#3a4350', width: 1, dash: 'dot' }, hoverinfo: 'skip', showlegend: false,
+    line: { color: '#2a3340', width: 1, dash: 'dot' }, hoverinfo: 'skip', showlegend: false,
   });
 
   Plotly.react('triChart', traces, {
     margin: { l: 66, r: 20, t: 10, b: 52 },
-    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: '#e8eef5' },
-    xaxis: { title: 'Dynasty value — FantasyPros', gridcolor: '#232a33', zeroline: false },
-    yaxis: { title: 'Win-now value — VBD (pts over replacement)', gridcolor: '#232a33', zeroline: false },
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: INK },
+    xaxis: { title: 'Dynasty value — FantasyPros', gridcolor: GRID, zeroline: false },
+    yaxis: { title: 'Win-now value — VBD (pts over replacement)', gridcolor: GRID, zeroline: false },
     legend: { orientation: 'h', y: 1.1 },
     annotations: [
       { x: maxv * 0.04, y: maxv * 0.96, xanchor: 'left', showarrow: false,
-        text: 'produces now · market discounts (sell-high)', font: { size: 10, color: '#8b97a7' } },
+        text: 'produces now · market discounts (sell-high)', font: { size: 10, color: '#8a95a8' } },
       { x: maxv * 0.96, y: maxv * 0.05, xanchor: 'right', showarrow: false,
-        text: 'market pays ahead of production (youth / injury / SF-QB)', font: { size: 10, color: '#8b97a7' } },
+        text: 'market pays ahead of production (youth / injury / SF-QB)', font: { size: 10, color: '#8a95a8' } },
     ],
   }, { displayModeBar: false, responsive: true });
 }
@@ -108,6 +193,7 @@ async function drillRoster(rosterId) {
   const meta = currentRows.find((r) => r.roster_id === rosterId) || {};
   const assets = await api(`/leagues/${currentLeague}/rosters/${rosterId}`);
   const valued = assets.filter((a) => a.fp_market_value != null);
+  rosterKpis(meta);
 
   // Value-weighted age — a dynasty-specific read on how "old" a team's VALUE is.
   const wsum = valued.reduce((s, a) => s + (a.age ? a.fp_market_value : 0), 0);
@@ -130,11 +216,13 @@ async function drillRoster(rosterId) {
   Plotly.react('posChart', [{
     type: 'pie', hole: 0.55,
     labels: Object.keys(byPos), values: Object.values(byPos),
-    textinfo: 'label+percent', marker: { line: { color: '#171c23', width: 2 } },
+    marker: { colors: Object.keys(byPos).map((p) => POS_COLOR[p] || '#8a95a8'),
+              line: { color: '#161b22', width: 2 } },
+    textinfo: 'label+percent',
   }], {
     margin: { l: 10, r: 10, t: 10, b: 10 }, showlegend: false,
-    paper_bgcolor: 'transparent', font: { color: '#e8eef5' },
-    annotations: [{ text: 'value<br>by pos', showarrow: false, font: { size: 12, color: '#8b97a7' } }],
+    paper_bgcolor: 'transparent', font: { color: INK },
+    annotations: [{ text: 'value<br>by pos', showarrow: false, font: { size: 12, color: '#8a95a8' } }],
   }, { displayModeBar: false, responsive: true });
 
   // Asset table.
@@ -149,7 +237,7 @@ async function drillRoster(rosterId) {
     </tr></thead><tbody>
       ${assets.map((a) => `<tr>
         <td>${a.player_name || '–'}</td>
-        <td><span class="pos">${a.position || '?'}</span></td>
+        <td><span class="pos pos-${a.position || ''}">${a.position || '?'}</span></td>
         <td class="num">${a.age ?? '–'}</td>
         <td>${a.nfl_team || '–'}</td>
         <td class="num">${fmt(a.fp_market_value)}</td>
