@@ -185,6 +185,16 @@ def main() -> int:
     ap.add_argument("--db", default="data/dynasty.db")
     args = ap.parse_args()
     con = sqlite3.connect(args.db)
+    have = {r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    need = {"outcomes": "outcomes_etl.py", "outcomes_provenance": "outcomes_etl.py",
+            "nfl_week_calendar": "outcomes_etl.py",
+            "dp_values_history": "dp_archive_etl.py",
+            "id_crosswalk": "dp_archive_etl.py"}
+    missing = {t: src for t, src in need.items() if t not in have}
+    if missing:
+        sys.exit("Missing tables -> run these first:\n" + "\n".join(
+            f"  {t}  ({src})" for t, src in sorted(missing.items())))
     con.executescript(DDL)
     league_id = con.execute("SELECT league_id FROM outcomes_provenance "
                             "WHERE is_canonical=1").fetchone()[0]
