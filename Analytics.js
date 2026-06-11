@@ -227,4 +227,45 @@ r.get('/leagues/:leagueId/rosters/:rosterId/surplus', async (req, res) => {
   res.json(rows);
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE INTO: server/src/routes/analytics.js — above `export default r;`
+// Step 4: positional cornering on the FIXED realized replacement bar.
+// SQL verified against the warehouse (Drew: 56 roster cells, 4 summary rows).
+// Run cornering_metrics.py first or both arrays come back empty (dashes
+// downstream — honest empty state, never fabrication).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Positional VONA cornering. ?basis=realized (default) | projected — both
+// measured against the SAME fixed realized bar (see cornering_metrics.py
+// docstring for the attribution reasoning and the staleness caveat that
+// must also ship in any UI tooltip). Response: { league: [per-position HHI,
+// bar, elite totals, top holder], rosters: [per (position, roster) VONA,
+// share, elite count] }. NOTE: compare HHIs within a basis, not across —
+// projection shrinkage pulls marginal players under the bar, which
+// mechanically concentrates the projected pool.
+r.get('/leagues/:leagueId/cornering', async (req, res) => {
+  const lid = req.params.leagueId;
+  const basis = req.query.basis === 'projected' ? 'projected' : 'realized';
+  const league = await query(
+    `SELECT position, replacement_bar, bar_currency, hhi, elite_total,
+            top_roster_id, top_share, n_unprojected
+     FROM positional_cornering_league
+     WHERE league_id = ? AND basis = ?
+       AND as_of_date = (SELECT MAX(as_of_date) FROM positional_cornering_league
+                         WHERE league_id = ? AND basis = ?)
+     ORDER BY position`,
+    [lid, basis, lid, basis]
+  );
+  const rosters = await query(
+    `SELECT position, roster_id, vona, vona_share, elite_count
+     FROM positional_cornering
+     WHERE league_id = ? AND basis = ?
+       AND as_of_date = (SELECT MAX(as_of_date) FROM positional_cornering
+                         WHERE league_id = ? AND basis = ?)
+     ORDER BY position, vona_share DESC`,
+    [lid, basis, lid, basis]
+  );
+  res.json({ basis, league, rosters });
+});
+
 export default r;
