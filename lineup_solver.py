@@ -166,15 +166,24 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/dynasty.db")
     ap.add_argument("--points-col", default="ppg",
-                    help="column of v_player_value used as lineup points "
-                         "(Step 3 swaps in a projection column)")
+                    help="points column of the source view used as lineup points")
+    ap.add_argument("--source", default="v_player_value",
+                    choices=["v_player_value", "v_player_value_projected"],
+                    help="v_player_value = realized REG-only; "
+                         "v_player_value_projected = m1 projection with "
+                         "fixed-bar vorp (built by cornering_metrics.py)")
     args = ap.parse_args()
     self_test()
     con = sqlite3.connect(args.db)
     con.executescript(DDL)
-    basis = f"v_player_value.{args.points_col} (REG-only realized; " \
-            f"pre-projection stand-in)" if args.points_col == "ppg" \
-            else f"v_player_value.{args.points_col}"
+    if args.source == "v_player_value_projected":
+        basis = (f"{args.source}.{args.points_col} (m1 projection, canonical "
+                 f"currency; preseason skill ≈ ECR baseline — see Model Lab; "
+                 f"vorp = VONA vs fixed realized bar)")
+    elif args.points_col == "ppg":
+        basis = f"{args.source}.ppg (REG-only realized)"
+    else:
+        basis = f"{args.source}.{args.points_col}"
 
     # Latest season PER LEAGUE THAT HAS VALUE DATA — a rolled-over season row
     # with no synced rosters (e.g. a pre-draft new year) must not silently
@@ -182,15 +191,15 @@ def main() -> int:
     leagues = con.execute(
         "SELECT l.league_id, l.league_name, l.roster_positions_json "
         "FROM dim_leagues l "
-        "WHERE l.season = (SELECT MAX(d2.season) FROM dim_leagues d2 "
-        "  JOIN v_player_value v ON v.league_id = d2.league_id "
-        "  WHERE d2.league_name = l.league_name)").fetchall()
+        f"WHERE l.season = (SELECT MAX(d2.season) FROM dim_leagues d2 "
+        f"  JOIN {args.source} v ON v.league_id = d2.league_id "
+        f"  WHERE d2.league_name = l.league_name)").fetchall()
 
     grand_gain = 0.0
     for lid, lname, rp in leagues:
         slots, skipped = league_slots(rp)
         snap = con.execute(
-            "SELECT MAX(snapshot_date) FROM v_player_value WHERE league_id=?",
+            f"SELECT MAX(snapshot_date) FROM {args.source} WHERE league_id=?",
             (lid,)).fetchone()[0]
         if snap is None:
             print(f"{lname}: SKIPPED — no v_player_value snapshot for {lid}")
@@ -200,15 +209,15 @@ def main() -> int:
         con.execute("DELETE FROM roster_construction WHERE league_id=? AND snapshot_date=?", (lid, snap))
 
         rosters = [r[0] for r in con.execute(
-            "SELECT DISTINCT roster_id FROM v_player_value "
-            "WHERE league_id=? AND snapshot_date=?", (lid, snap))]
+            f"SELECT DISTINCT roster_id FROM {args.source} "
+            f"WHERE league_id=? AND snapshot_date=?", (lid, snap))]
         div = 0
         for rid in rosters:
             players = [dict(zip(("player_id", "player_name", "position",
                                  "points", "vorp"), row))
                        for row in con.execute(
                 f"SELECT player_id, player_name, position, {args.points_col}, vorp "
-                f"FROM v_player_value WHERE league_id=? AND roster_id=? "
+                f"FROM {args.source} WHERE league_id=? AND roster_id=? "
                 f"AND snapshot_date=? AND position IN ('QB','RB','WR','TE')",
                 (lid, rid, snap))]
             lineup, osl, empty = solve_hungarian(slots, players)
