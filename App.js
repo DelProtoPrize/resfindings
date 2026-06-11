@@ -26,6 +26,8 @@ let prodByRoster = null;   // roster_id -> production_vbd (null = endpoint absen
 let prodTotal = 0;
 let projByRoster = null;   // projected basis (m1); null until project_production.py + route v2
 let projTotal = 0;
+let cornerCache = { realized: null, projected: null };  // per-league fetch cache
+let cornerBasis = 'realized';
 let valueTotal = 0;
 
 /* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
@@ -217,6 +219,144 @@ async function render(leagueId) {
   });
 
   renderTriangulation(leagueId);
+  renderCornering(leagueId);
+}
+
+/* ── Positional Cornering (Step 4 UI) ──────────────────────────────────────
+   Who controls the scarce production, per position, against the FIXED
+   realized replacement bar. Both bases come from the same route; HHIs are
+   never compared across bases (projected runs mechanically hot — shrinkage
+   thins the elite pool). The durability line is a WITHIN-TEAM realized→
+   projected share delta, rendered as text on the diagnostic strip — the one
+   cross-basis read the caveat permits. */
+const ownerName = (rid) =>
+  (currentRows.find((r) => r.roster_id === rid) || {}).owner_name || `Roster ${rid}`;
+const MUTED_SEG = ['#2a3340', '#242c38', '#1f2630', '#343e4d'];
+
+async function renderCornering(leagueId) {
+  const chartEl = document.getElementById('cornerChart');
+  if (!chartEl) return;                       // old page — feature absent
+  cornerCache = { realized: null, projected: null };
+  cornerBasis = 'realized';
+  try {
+    const r = await api(`/leagues/${leagueId}/cornering?basis=realized`);
+    if (r && Array.isArray(r.league) && r.league.length) cornerCache.realized = r;
+  } catch { /* route absent — empty state stays */ }
+  try {
+    const r = await api(`/leagues/${leagueId}/cornering?basis=projected`);
+    if (r && Array.isArray(r.league) && r.league.length) cornerCache.projected = r;
+  } catch { /* projection layer absent — toggle disables below */ }
+
+  const toggle = document.getElementById('cornerToggle');
+  if (toggle && !toggle.dataset.wired) {
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-basis]');
+      if (!btn || btn.disabled) return;
+      cornerBasis = btn.dataset.basis;
+      toggle.querySelectorAll('button').forEach((b) =>
+        b.setAttribute('aria-pressed', String(b.dataset.basis === cornerBasis)));
+      drawCornering();
+    });
+  }
+  if (toggle) {
+    const projBtn = toggle.querySelector('button[data-basis="projected"]');
+    if (projBtn) {
+      projBtn.disabled = !cornerCache.projected;
+      projBtn.title = cornerCache.projected ? '' :
+        'Projected basis unavailable — run project_production.py, then cornering_metrics.py';
+    }
+  }
+  drawCornering();
+}
+
+function drawCornering() {
+  const chartEl = document.getElementById('cornerChart');
+  const cardsEl = document.getElementById('cornerCards');
+  const diagEl = document.getElementById('cornerDiag');
+  if (!chartEl) return;
+  const data = cornerCache[cornerBasis];
+  if (!data) {
+    chartEl.innerHTML = `<div class="state-msg">Cornering tables not built yet — run
+      <code>python project_production.py</code> → <code>python cornering_metrics.py</code></div>`;
+    if (cardsEl) cardsEl.innerHTML = '';
+    if (diagEl) diagEl.style.display = 'none';
+    return;
+  }
+
+  const league = [...data.league].sort((a, b) => (b.hhi ?? 0) - (a.hhi ?? 0));
+  const positions = league.map((l) => l.position);
+  const nTeams = currentRows.length || 14;
+  const evenHhi = 1 / nTeams;
+
+  // one trace per "share rank within position" so segment colors are per-cell:
+  // top holder gets the position color, the field gets muted shades.
+  const byPos = {};
+  for (const row of data.rosters) (byPos[row.position] ??= []).push(row);
+  for (const posRows of Object.values(byPos)) posRows.sort((a, b) => (b.vona_share ?? 0) - (a.vona_share ?? 0));
+  const maxLen = Math.max(...Object.values(byPos).map((r) => r.length), 0);
+  const traces = [];
+  for (let k = 0; k < maxLen; k++) {
+    const xs = [], cols = [], cd = [];
+    for (const pos of positions) {
+      const row = (byPos[pos] || [])[k];
+      xs.push(row ? row.vona_share : 0);
+      cols.push(k === 0 ? (POS_COLOR[pos] || '#8a95a8') : MUTED_SEG[k % MUTED_SEG.length]);
+      cd.push(row ? [ownerName(row.roster_id), (row.vona_share * 100).toFixed(1), row.elite_count] : ['', '', '']);
+    }
+    traces.push({
+      type: 'bar', orientation: 'h', x: xs, y: positions, marker: { color: cols },
+      customdata: cd, showlegend: false,
+      hovertemplate: '%{customdata[0]}: %{customdata[1]}% of %{y} VONA · %{customdata[2]} startable<extra></extra>',
+    });
+  }
+  Plotly.react('cornerChart', traces, {
+    barmode: 'stack', margin: { l: 44, r: 10, t: 6, b: 34 },
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    font: { color: INK, size: 12 },
+    xaxis: { tickformat: '.0%', gridcolor: GRID, range: [0, 1], zeroline: false },
+    yaxis: { autorange: 'reversed' },
+  }, { displayModeBar: false, responsive: true });
+
+  // right: HHI cards
+  if (cardsEl) {
+    const label = (h) => h / evenHhi > 1.8 ? 'concentrated' : h / evenHhi > 1.3 ? 'tilted' : 'balanced';
+    cardsEl.innerHTML = league.map((l, i) => `
+      <div class="hhi-card${i === 0 ? ' cornered' : ''}">
+        <div class="hc-row">
+          <span class="hc-pos" style="color:${POS_COLOR[l.position] || '#8a95a8'}">${l.position}</span>
+          <span class="hc-hhi">${l.hhi != null ? l.hhi.toFixed(3) : '–'}</span>
+        </div>
+        <div class="hc-sub">${l.hhi != null ? label(l.hhi) : 'no data'} · top: ${ownerName(l.top_roster_id)}
+          ${l.n_unprojected ? ` · ${l.n_unprojected} unprojected` : ''}</div>
+      </div>`).join('');
+  }
+
+  // bottom: plain-language diagnostic for the most-cornered position
+  if (diagEl) {
+    const top = league[0];
+    const rows = byPos[top.position] || [];
+    const lead = rows[0], second = rows[1];
+    if (!lead) { diagEl.style.display = 'none'; return; }
+    let line = `<b>${ownerName(lead.roster_id)}</b> holds ${lead.elite_count} of ${top.elite_total} startable ${top.position}s — carrying <b>${(lead.vona_share * 100).toFixed(1)}%</b> of league ${top.position} VONA`;
+    if (second) {
+      line += `, vs ${ownerName(second.roster_id)}'s ${second.elite_count} at ${(second.vona_share * 100).toFixed(1)}%`;
+      if (lead.elite_count <= second.elite_count) line += '. Quality cornering, not body-count';
+    }
+    line += '.';
+    // durability: within-team realized→projected delta, text only (per caveat)
+    if (cornerBasis === 'realized' && cornerCache.projected) {
+      const projRows = cornerCache.projected.rosters
+        .filter((r) => r.position === top.position);
+      const mine = projRows.find((r) => r.roster_id === lead.roster_id);
+      if (mine && mine.vona_share != null) {
+        const holds = mine.vona_share >= lead.vona_share - 0.01;
+        line += `<span class="durability">${top.position} corner: ${(lead.vona_share * 100).toFixed(1)}% → ${(mine.vona_share * 100).toFixed(1)}% projected · ${holds ? 'corner holds' : 'moat depreciating'}</span>`;
+      }
+    }
+    diagEl.innerHTML = line;
+    diagEl.style.display = 'block';
+  }
 }
 
 // Win-now (VBD, production over replacement) vs dynasty (FP market price). Each point
