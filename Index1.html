@@ -169,6 +169,29 @@
       border: 1px solid var(--line-strong); color: var(--ink); font-size: 11px; padding: 4px 8px;
       border-radius: 5px; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 10; }
     [data-tip]:hover::after { opacity: 1; }
+    /* ── CORNERING PANEL ── */
+    .seg-toggle { display: inline-flex; background: var(--surface); border: 1px solid var(--line-strong);
+                  border-radius: 7px; padding: 2px; gap: 2px; }
+    .seg-toggle button { background: transparent; border: 0; color: var(--ink-dim); font: 600 11px/1 inherit;
+                         padding: 5px 12px; border-radius: 5px; cursor: pointer; letter-spacing: .03em; }
+    .seg-toggle button[aria-pressed="true"] { background: var(--panel-hover); color: var(--ink);
+                                              border: 1px solid var(--line-strong); padding: 4px 11px; }
+    .seg-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .seg-toggle button:disabled { opacity: .4; cursor: not-allowed; }
+    .corner-grid { display: grid; grid-template-columns: 1fr 270px; gap: 20px; align-items: start; }
+    @media (max-width: 840px) { .corner-grid { grid-template-columns: 1fr; } }
+    .hhi-card { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
+                border-radius: 0 6px 6px 0; padding: 9px 12px; margin-bottom: 8px; }
+    .hhi-card.cornered { border-left-color: var(--warn); }
+    .hhi-card .hc-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .hhi-card .hc-pos { font: 700 12px var(--mono); }
+    .hhi-card .hc-hhi { font: 700 15px var(--mono); color: var(--ink); }
+    .hhi-card .hc-sub { font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
+    .hhi-note { font-size: 10.5px; color: var(--ink-faint); margin-top: 6px; line-height: 1.45; }
+    .corner-diag { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+                   font-size: 14px; color: var(--ink); line-height: 1.55; }
+    .corner-diag .durability { color: var(--ink-dim); font-size: 12.5px; display: block; margin-top: 4px; }
+
     .state-msg { padding: 40px 20px; text-align: center; color: var(--ink-dim); font-size: 13px; }
     .state-msg code { font-family: var(--mono); color: var(--ink); background: var(--surface);
                       padding: 2px 6px; border-radius: 4px; font-size: 12px; }
@@ -274,6 +297,31 @@
         <div id="triChart" style="height:480px"></div>
       </section>
     </div>
+
+    <div class="section-gap"></div>
+
+    <section class="panel" id="cornerPanel">
+      <div class="panel-head">
+        <h2>Positional Cornering <span class="panel-sub">— who controls the scarce production, and is that control durable?</span></h2>
+        <div class="seg-toggle" id="cornerToggle" role="group" aria-label="Cornering basis"
+             data-tip="Caveats: HHIs are comparable within a basis only — projected HHIs run mechanically hot because shrinkage thins the elite pool. And the fixed realized replacement bar can go stale if positional scarcity shifts (rookie QB class, scoring change); revisit if extended multi-year.">
+          <button type="button" data-basis="realized" aria-pressed="true">Realized</button>
+          <button type="button" data-basis="projected" aria-pressed="false">Projected</button>
+        </div>
+      </div>
+      <div class="corner-grid">
+        <div id="cornerChart" style="height:300px">
+          <div class="state-msg">Cornering tables not built yet — run
+            <code>python project_production.py</code> →
+            <code>python cornering_metrics.py</code></div>
+        </div>
+        <div>
+          <div id="cornerCards"></div>
+          <div class="hhi-note">HHI = sum of squared shares; higher = one manager controls more of the position's above-replacement production.</div>
+        </div>
+      </div>
+      <div class="corner-diag" id="cornerDiag" style="display:none"></div>
+    </section>
 
     <div class="section-gap"></div>
 
