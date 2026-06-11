@@ -175,6 +175,18 @@ def main() -> int:
     args = ap.parse_args()
     self_test()
     con = sqlite3.connect(args.db)
+    # Fail with instructions, not a traceback, if the requested source is
+    # missing. The projected view is created by cornering_metrics.py (which
+    # owns the fixed replacement bar) and requires project_production.py's
+    # table to exist first.
+    if not con.execute("SELECT name FROM sqlite_master WHERE name=?",
+                       (args.source,)).fetchone():
+        sys.exit(
+            f"source '{args.source}' does not exist in {args.db}.\n"
+            "Build order:\n"
+            "  1. python project_production.py --db data/dynasty.db\n"
+            "  2. python cornering_metrics.py  --db data/dynasty.db\n"
+            "  3. re-run this command")
     con.executescript(DDL)
     if args.source == "v_player_value_projected":
         basis = (f"{args.source}.{args.points_col} (m1 projection, canonical "
