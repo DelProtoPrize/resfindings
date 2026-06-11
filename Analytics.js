@@ -131,25 +131,41 @@ r.get('/leagues/:id/rosters/:rosterId', async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PASTE INTO: server/src/routes/analytics.js — next to the existing routes,
-// ABOVE the `export default r;` line.
-// Matches your file's actual handles: router is `r`, query helper is `query`
-// from ../db.js, called as `await query(sql, [params])`.
-// Placeholders are `?` like your SQLite default; if you run Postgres via
-// DATABASE_URL and your other routes use $1/$2, switch them the same way.
-//
-// VERIFIED against the live warehouse (v_player_value):
-//   pooled:      14 Drew rosters, client-side shares sum to 1.0
-//   ?by=position: positional cut works — e.g. one roster holds 23.6% of
-//                 league RB VBD (the roadmap's "cornering" diagnostic)
+// REPLACES the /leagues/:leagueId/production route from server_production_route.txt
+// (keep ?by=position behavior; adds ?basis=projected).
+// PASTE INTO: server/src/routes/analytics.js, above `export default r;`
+// SQL verified against the warehouse: realized 14 rosters sum 1.0;
+// projected 14 rosters sum 1.0 (after project_production.py has run).
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Per-roster production (VBD = points over replacement), latest snapshot.
-// Default: pooled across positions (the team-dominance number on the KPI card).
-// ?by=position: per-position rows — the endpoint the future cornering panel
-// reads (share of each position's league-wide VBD).
+ 
+// Per-roster production. Two bases, same response shape:
+//   default            -> realized REG-only VBD (v_player_value)
+//   ?basis=projected   -> m1-projected VBD (player_projected_value).
+//      LABEL THAT TRAVELS WITH IT: at preseason as-ofs the projection is
+//      statistically indistinguishable from the flat-ECR baseline (Model Lab,
+//      m1 verdicts); its CI-clearing edge is in-season. Serve it, never
+//      oversell it.
+//   ?by=position       -> positional cut (realized basis only for now; the
+//      cornering panel's endpoint).
 r.get('/leagues/:leagueId/production', async (req, res) => {
   const lid = req.params.leagueId;
+  if (req.query.basis === 'projected') {
+    const rows = await query(
+      `SELECT p.roster_id,
+              SUM(p.vbd_proj) AS production_vbd,
+              MAX(p.as_of_date) AS as_of_date,
+              MAX(p.model_id)  AS model_id
+       FROM player_projected_value p
+       WHERE p.league_id = ?
+         AND p.as_of_date = (
+           SELECT MAX(as_of_date) FROM player_projected_value WHERE league_id = ?
+         )
+       GROUP BY p.roster_id
+       ORDER BY p.roster_id`,
+      [lid, lid]
+    );
+    return res.json(rows);
+  }
   const byPos = req.query.by === 'position';
   const rows = await query(
     `SELECT v.roster_id${byPos ? ', v.position' : ''},
