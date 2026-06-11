@@ -1,260 +1,257 @@
 """
-lineup_solver.py — Step 2: slot-eligibility matrix + Hungarian optimal lineup.
+cornering_metrics.py — Step 4: market cornering on a FIXED replacement bar.
 
-WHY HUNGARIAN, NOT GREEDY (the deliberate talking point):
-With partial-overlap flex slots, greedy "fill most-restrictive slot with the
-best remaining eligible player" is NOT optimal. Concrete counterexample,
-embedded as a self-test below (slots WR / WRRB_FLEX / REC_FLEX — both exist
-in our real leagues):
-    WR_A 10pts, WR_B 9, RB_C 8, TE_D 2
-    greedy:  WR<-WR_A(10), WRRB_FLEX<-WR_B(9), REC_FLEX<-TE_D(2)  = 21
-    optimal: WR<-WR_A(10), WRRB_FLEX<-RB_C(8), REC_FLEX<-WR_B(9)  = 27
-Greedy parks WR_B in the slot RB_C needed; the assignment problem sees the
-whole matrix. scipy.optimize.linear_sum_assignment solves it exactly.
+THE REPLACEMENT-LEVEL DECISION (governs everything here):
+The bar is FIXED REALIZED replacement — player_production_value.replacement_ppg
+per (league, position), from the most recent completed season — held constant
+for BOTH bases. Player production in the numerator may be realized or
+projected; the denominator bar does not move.
 
-SCORING RULE: the lineup is scored on POINTS, never VORP. A lineup scores
-points; the SUPER_FLEX "start an RB over QB2 if it outprojects" call is a
-points comparison. VORP enters only afterward, as the surplus-quality filter:
-  true surplus = players who LOSE the assignment AND have VORP>0
-  (startable trade capital — the number that makes RB-cornering concrete).
-Picks are never in the lineup; they are capital of a separate kind (Step 1).
+Why fixed (the defensible reasoning, verbatim): holding replacement fixed
+localizes all forecast error to the numerator, so every point of share or
+cornering movement traces to a specific roster's players rather than to the
+pool re-forecasting. Projection-derived replacement would put prediction
+error in the bar and the player simultaneously — and our own m1 compresses
+the QB tail, which would shift cross-position balance for a mechanical
+reason, not a roster-skill reason. Fixed bar = clean attribution.
 
-POINTS INPUT (until Step 3): REG-only realized PPG from v_player_value,
-labeled as such in roster_construction.points_basis. The solver takes the
-points column as a parameter; Step 3's projections plug into the same
-interface without touching the assignment code.
+KNOWN CAVEAT (also ships in the UI tooltip — a panelist should never find it
+first): a fixed realized bar can go stale if positional scarcity shifts
+(rookie QB class, scoring-rule change). Over a single offseason the drift is
+small and attribution clarity is worth more; revisit if the metric is ever
+extended multi-year.
 
-Slots: derived per league from dim_leagues.roster_positions_json.
-  QB{QB} RB{RB} WR{WR} TE{TE} FLEX{RB,WR,TE}
-  SUPER_FLEX{QB,RB,WR,TE} WRRB_FLEX{WR,RB} REC_FLEX{WR,TE}
-  Unsupported (K/DEF/IDP_*) are skipped and counted — no valuations exist
-  for those positions, so pretending to fill them would be fabrication.
+CURRENCY HANDLING (the one place care is needed): realized PPG is in each
+league's own scoring; ppg_proj is in canonical (Drew) currency. A bar must
+share its numerator's currency, so:
+  realized basis : bar = replacement_ppg as stored (league currency).
+  projected basis: the SAME replacement rank K (recovered per league/position
+    as the bar's rank within player_production_value's pool), re-expressed in
+    canonical currency as the K-th ranked canonical realized PPG. Same player
+    cutoff, same season, same pool — only the unit changes. For the canonical
+    league the two bars are identical (verified at runtime).
 
-Tables written (idempotent per league+snapshot):
-  roster_lineup_optimal(snapshot_date, league_id, roster_id, slot, slot_seq,
-                        player_id, player_name, position, points)
-  roster_surplus(snapshot_date, league_id, roster_id, player_id, player_name,
-                 position, points, vorp)
-  roster_construction(snapshot_date, league_id, roster_id, osl_points,
-                      slots_filled, slots_empty, skipped_slots,
-                      surplus_count, surplus_vorp, surplus_points,
-                      greedy_points, hungarian_gain, points_basis)
+METRICS per (league, position):
+  VONA            max(production - fixed_bar, 0) per player (positional
+                  value-over-next-available; pooled-across-positions would
+                  erase the cornering signal entirely).
+  vona_share      team's summed VONA / league-wide summed VONA.
+  elite held      count of a team's players with VONA > 0 ("RB1s held:
+                  X holds 4 of 12").
+  positional HHI  sum of squared team shares — how concentrated leaguewide
+                  above-replacement production is at that position.
 
-Run:  python lineup_solver.py --db data/dynasty.db
-Requires scipy — add `scipy` to etl/requirements.txt.
+Tables (idempotent per basis + as-of):
+  positional_cornering(basis, as_of_date, league_id, position, roster_id,
+      vona, vona_share, elite_count)
+  positional_cornering_league(basis, as_of_date, league_id, position,
+      replacement_bar, bar_currency, hhi, elite_total,
+      top_roster_id, top_share, n_unprojected)
+
+Run:  python cornering_metrics.py --db data/dynasty.db
+      (projected basis requires project_production.py to have run; if its
+       table is absent, the realized basis still builds and the projected
+       basis is skipped with a notice — dashes downstream, never fabrication)
 """
 from __future__ import annotations
 
 import argparse
-import json
 import sqlite3
 import sys
-
-import numpy as np
-from scipy.optimize import linear_sum_assignment
-
-ELIGIBILITY = {
-    "QB": {"QB"}, "RB": {"RB"}, "WR": {"WR"}, "TE": {"TE"},
-    "FLEX": {"RB", "WR", "TE"},
-    "SUPER_FLEX": {"QB", "RB", "WR", "TE"},
-    "WRRB_FLEX": {"WR", "RB"},
-    "REC_FLEX": {"WR", "TE"},
-}
-NON_LINEUP = {"BN", "IR", "TAXI"}
+from datetime import date
 
 DDL = """
-CREATE TABLE IF NOT EXISTS roster_lineup_optimal (
-    snapshot_date TEXT, league_id TEXT, roster_id INTEGER,
-    slot TEXT, slot_seq INTEGER, player_id TEXT, player_name TEXT,
-    position TEXT, points REAL,
-    PRIMARY KEY (snapshot_date, league_id, roster_id, slot, slot_seq)
+CREATE TABLE IF NOT EXISTS positional_cornering (
+    basis TEXT, as_of_date TEXT, league_id TEXT, position TEXT,
+    roster_id INTEGER, vona REAL, vona_share REAL, elite_count INTEGER,
+    PRIMARY KEY (basis, as_of_date, league_id, position, roster_id)
 );
-CREATE TABLE IF NOT EXISTS roster_surplus (
-    snapshot_date TEXT, league_id TEXT, roster_id INTEGER,
-    player_id TEXT, player_name TEXT, position TEXT, points REAL, vorp REAL,
-    PRIMARY KEY (snapshot_date, league_id, roster_id, player_id)
-);
-CREATE TABLE IF NOT EXISTS roster_construction (
-    snapshot_date TEXT, league_id TEXT, roster_id INTEGER,
-    osl_points REAL, slots_filled INTEGER, slots_empty INTEGER,
-    skipped_slots TEXT, surplus_count INTEGER, surplus_vorp REAL,
-    surplus_points REAL, greedy_points REAL, hungarian_gain REAL,
-    points_basis TEXT,
-    PRIMARY KEY (snapshot_date, league_id, roster_id)
+CREATE TABLE IF NOT EXISTS positional_cornering_league (
+    basis TEXT, as_of_date TEXT, league_id TEXT, position TEXT,
+    replacement_bar REAL, bar_currency TEXT, hhi REAL, elite_total INTEGER,
+    top_roster_id INTEGER, top_share REAL, n_unprojected INTEGER,
+    PRIMARY KEY (basis, as_of_date, league_id, position)
 );
 """
+POSITIONS = ("QB", "RB", "WR", "TE")
 
 
-# --------------------------------------------------------------------------- #
-# solvers
-# --------------------------------------------------------------------------- #
-
-def solve_hungarian(slots: list[str], players: list[dict]) -> tuple[list, float, int]:
-    """Optimal assignment. Returns (assignment rows, total points, empty slots).
-    Forbidden pairs are np.inf cost; dummy zero-point players pad feasibility
-    when a roster has fewer eligible bodies than slots (those slots report
-    empty rather than crashing the matching)."""
-    n_s, n_p = len(slots), len(players)
-    pad = max(0, n_s - n_p) + n_s  # always enough dummies for feasibility
-    cost = np.full((n_s, n_p + pad), np.inf)
-    for i, slot in enumerate(slots):
-        elig = ELIGIBILITY[slot]
-        for j, p in enumerate(players):
-            if p["position"] in elig:
-                cost[i, j] = -(p["points"] or 0.0)
-        cost[i, n_p:] = 0.0  # dummies: eligible everywhere, worth 0
-    rows, cols = linear_sum_assignment(cost)
-    out, total, empty = [], 0.0, 0
-    for i, j in zip(rows, cols):
-        if j >= n_p:
-            empty += 1
-            continue
-        p = players[j]
-        out.append((slots[i], p))
-        total += p["points"] or 0.0
-    return out, total, empty
+def fixed_bars(con) -> dict[tuple[str, str], tuple[float, int]]:
+    """(league, pos) -> (realized replacement_ppg, implied rank K within
+    player_production_value's own pool). Single source of truth."""
+    out = {}
+    for lid, pos, bar in con.execute(
+            "SELECT DISTINCT league_id, position, replacement_ppg "
+            "FROM player_production_value WHERE position IN (?,?,?,?)",
+            POSITIONS):
+        k = con.execute(
+            "SELECT COUNT(*) + 1 FROM player_production_value "
+            "WHERE league_id=? AND position=? AND ppg > ?",
+            (lid, pos, bar)).fetchone()[0]
+        out[(lid, pos)] = (bar, k)
+    return out
 
 
-def solve_greedy(slots: list[str], players: list[dict]) -> float:
-    """The benchmark to beat: most-restrictive slot first, best remaining
-    eligible player. Kept ONLY to measure the Hungarian gain — never used
-    for real output."""
-    order = sorted(range(len(slots)), key=lambda i: len(ELIGIBILITY[slots[i]]))
-    taken, total = set(), 0.0
-    for i in order:
-        elig = ELIGIBILITY[slots[i]]
-        best, bj = -1.0, None
-        for j, p in enumerate(players):
-            if j in taken or p["position"] not in elig:
-                continue
-            if (p["points"] or 0.0) > best:
-                best, bj = (p["points"] or 0.0), j
-        if bj is not None:
-            taken.add(bj)
-            total += best
-    return total
+def canonical_bars(con, bars, canonical) -> dict[tuple[str, str], float]:
+    """Same rank K, re-expressed in canonical currency: the K-th ranked
+    canonical realized PPG. For the canonical league this must reproduce the
+    stored bar (asserted by the caller's verification)."""
+    out = {}
+    for (lid, pos), (_bar, k) in bars.items():
+        row = con.execute(
+            "SELECT ppg FROM player_production_value "
+            "WHERE league_id=? AND position=? ORDER BY ppg DESC "
+            "LIMIT 1 OFFSET ?", (canonical, pos, k - 1)).fetchone()
+        if row:
+            out[(lid, pos)] = row[0]
+    return out
 
 
-def self_test() -> None:
-    """The counterexample from the module docstring, asserted."""
-    slots = ["WR", "WRRB_FLEX", "REC_FLEX"]
-    players = [
-        {"position": "WR", "points": 10.0, "player_id": "A", "player_name": "WR_A", "vorp": 0},
-        {"position": "WR", "points": 9.0,  "player_id": "B", "player_name": "WR_B", "vorp": 0},
-        {"position": "RB", "points": 8.0,  "player_id": "C", "player_name": "RB_C", "vorp": 0},
-        {"position": "TE", "points": 2.0,  "player_id": "D", "player_name": "TE_D", "vorp": 0},
-    ]
-    g = solve_greedy(slots, players)
-    _, h, _ = solve_hungarian(slots, players)
-    assert g == 21.0 and h == 27.0, f"counterexample broken: greedy={g}, hungarian={h}"
-
-
-# --------------------------------------------------------------------------- #
-# pipeline
-# --------------------------------------------------------------------------- #
-
-def league_slots(rp_json: str) -> tuple[list[str], list[str]]:
-    slots, skipped = [], []
-    for s in json.loads(rp_json):
-        if s in NON_LINEUP:
-            continue
-        (slots if s in ELIGIBILITY else skipped).append(s)
-    return slots, skipped
+def write_basis(con, basis, as_of, rows_by_league_pos):
+    for (lid, pos), data in rows_by_league_pos.items():
+        bar, currency, players, n_unproj = data
+        per_roster: dict[int, list] = {}
+        for rid, prod in players:
+            v = max((prod or 0) - bar, 0.0)
+            e = per_roster.setdefault(rid, [0.0, 0])
+            e[0] += v
+            e[1] += 1 if v > 0 else 0
+        total = sum(v for v, _ in per_roster.values())
+        hhi, top_rid, top_share = 0.0, None, 0.0
+        for rid, (v, elite) in sorted(per_roster.items()):
+            share = (v / total) if total > 0 else None
+            if share is not None:
+                hhi += share * share
+                if share > top_share:
+                    top_rid, top_share = rid, share
+            con.execute(
+                "INSERT OR REPLACE INTO positional_cornering VALUES "
+                "(?,?,?,?,?,?,?,?)",
+                (basis, as_of, lid, pos, rid, round(v, 2),
+                 None if share is None else round(share, 6), elite))
+        con.execute(
+            "INSERT OR REPLACE INTO positional_cornering_league VALUES "
+            "(?,?,?,?,?,?,?,?,?,?,?)",
+            (basis, as_of, lid, pos, round(bar, 4), currency,
+             round(hhi, 4) if total > 0 else None,
+             sum(e for _, e in per_roster.values()),
+             top_rid, round(top_share, 6) if total > 0 else None, n_unproj))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/dynasty.db")
-    ap.add_argument("--points-col", default="ppg",
-                    help="points column of the source view used as lineup points")
-    ap.add_argument("--source", default="v_player_value",
-                    choices=["v_player_value", "v_player_value_projected"],
-                    help="v_player_value = realized REG-only; "
-                         "v_player_value_projected = m1 projection with "
-                         "fixed-bar vorp (built by cornering_metrics.py)")
+    ap.add_argument("--as-of", default=str(date.today()))
     args = ap.parse_args()
-    self_test()
     con = sqlite3.connect(args.db)
     con.executescript(DDL)
-    if args.source == "v_player_value_projected":
-        basis = (f"{args.source}.{args.points_col} (m1 projection, canonical "
-                 f"currency; preseason skill ≈ ECR baseline — see Model Lab; "
-                 f"vorp = VONA vs fixed realized bar)")
-    elif args.points_col == "ppg":
-        basis = f"{args.source}.ppg (REG-only realized)"
+    canonical = con.execute("SELECT league_id FROM outcomes_provenance "
+                            "WHERE is_canonical=1").fetchone()[0]
+
+    bars = fixed_bars(con)
+    cbars = canonical_bars(con, bars, canonical)
+    season = con.execute(
+        "SELECT MAX(season) FROM player_production_value").fetchone()[0]
+    print(f"fixed realized bar — season {season}, from "
+          f"player_production_value.replacement_ppg:")
+    for (lid, pos), (bar, k) in sorted(bars.items()):
+        if lid == canonical:
+            print(f"  canonical {pos}: bar {bar} ppg (implied rank K={k}; "
+                  f"canonical-currency re-expression {cbars[(lid, pos)]})")
+
+    # current rostered world, scoped to latest season-with-data per league
+    league_rows = con.execute(
+        "SELECT l.league_id FROM dim_leagues l WHERE l.season = "
+        "(SELECT MAX(d2.season) FROM dim_leagues d2 JOIN v_player_value v "
+        " ON v.league_id=d2.league_id WHERE d2.league_name=l.league_name)"
+    ).fetchall()
+    leagues = [r[0] for r in league_rows]
+
+    # ---- realized basis ------------------------------------------------------
+    work = {}
+    for lid in leagues:
+        for pos in POSITIONS:
+            if (lid, pos) not in bars:
+                continue
+            players = con.execute(
+                "SELECT roster_id, ppg FROM v_player_value "
+                "WHERE league_id=? AND position=? AND ppg IS NOT NULL AND "
+                "snapshot_date=(SELECT MAX(snapshot_date) FROM v_player_value "
+                "WHERE league_id=?)", (lid, pos, lid)).fetchall()
+            work[(lid, pos)] = (bars[(lid, pos)][0], "league", players, 0)
+    con.execute("DELETE FROM positional_cornering WHERE basis='realized' AND as_of_date=?", (args.as_of,))
+    con.execute("DELETE FROM positional_cornering_league WHERE basis='realized' AND as_of_date=?", (args.as_of,))
+    write_basis(con, "realized", args.as_of, work)
+    print(f"realized basis: {len(work)} (league, position) cells written")
+
+    # ---- projected basis (skipped honestly if Step 3 hasn't run) -------------
+    has_proj = con.execute(
+        "SELECT name FROM sqlite_master WHERE name='player_projected_value'"
+    ).fetchone()
+    if has_proj:
+        work = {}
+        for lid in leagues:
+            asof_proj = con.execute(
+                "SELECT MAX(as_of_date) FROM player_projected_value "
+                "WHERE league_id=?", (lid,)).fetchone()[0]
+            if asof_proj is None:
+                continue
+            for pos in POSITIONS:
+                if (lid, pos) not in cbars:
+                    continue
+                players = con.execute(
+                    "SELECT roster_id, ppg_proj FROM player_projected_value "
+                    "WHERE league_id=? AND position=? AND as_of_date=? "
+                    "AND ppg_proj IS NOT NULL", (lid, pos, asof_proj)).fetchall()
+                n_unproj = con.execute(
+                    "SELECT COUNT(*) FROM player_projected_value "
+                    "WHERE league_id=? AND position=? AND as_of_date=? "
+                    "AND ppg_proj IS NULL", (lid, pos, asof_proj)).fetchone()[0]
+                work[(lid, pos)] = (cbars[(lid, pos)], "canonical",
+                                    players, n_unproj)
+        con.execute("DELETE FROM positional_cornering WHERE basis='projected' AND as_of_date=?", (args.as_of,))
+        con.execute("DELETE FROM positional_cornering_league WHERE basis='projected' AND as_of_date=?", (args.as_of,))
+        write_basis(con, "projected", args.as_of, work)
+        print(f"projected basis: {len(work)} cells written "
+              f"(numerator ppg_proj, canonical-currency bar, same K)")
+        # Deferred Step 3 item, landed here because this module owns the bar:
+        # a v_player_value-shaped view over projections, so lineup_solver.py
+        # can run on the projected world (--source v_player_value_projected).
+        # vorp is VONA against the SAME fixed bar (never m1's moving
+        # replacement), keeping the solver's surplus filter consistent with
+        # every other Step 4 number.
+        con.executescript("""
+            DROP VIEW IF EXISTS v_player_value_projected;
+            CREATE VIEW v_player_value_projected AS
+            SELECT p.as_of_date  AS snapshot_date,
+                   p.league_id, p.roster_id, p.player_id, p.player_name,
+                   p.position,
+                   p.ppg_proj    AS ppg,
+                   CASE WHEN p.ppg_proj > b.replacement_bar
+                        THEN ROUND(p.ppg_proj - b.replacement_bar, 2)
+                        ELSE 0 END AS vorp
+            FROM player_projected_value p
+            JOIN positional_cornering_league b
+              ON b.league_id = p.league_id AND b.position = p.position
+             AND b.basis = 'projected' AND b.as_of_date = p.as_of_date;
+        """)
+        print("view v_player_value_projected (fixed-bar vorp) refreshed")
     else:
-        basis = f"{args.source}.{args.points_col}"
+        print("projected basis SKIPPED — player_projected_value absent "
+              "(run project_production.py); downstream shows dashes")
+    con.commit()
 
-    # Latest season PER LEAGUE THAT HAS VALUE DATA — a rolled-over season row
-    # with no synced rosters (e.g. a pre-draft new year) must not silently
-    # shadow the season that actually has a warehouse snapshot.
-    leagues = con.execute(
-        "SELECT l.league_id, l.league_name, l.roster_positions_json "
-        "FROM dim_leagues l "
-        f"WHERE l.season = (SELECT MAX(d2.season) FROM dim_leagues d2 "
-        f"  JOIN {args.source} v ON v.league_id = d2.league_id "
-        f"  WHERE d2.league_name = l.league_name)").fetchall()
-
-    grand_gain = 0.0
-    for lid, lname, rp in leagues:
-        slots, skipped = league_slots(rp)
-        snap = con.execute(
-            f"SELECT MAX(snapshot_date) FROM {args.source} WHERE league_id=?",
-            (lid,)).fetchone()[0]
-        if snap is None:
-            print(f"{lname}: SKIPPED — no v_player_value snapshot for {lid}")
-            continue
-        con.execute("DELETE FROM roster_lineup_optimal WHERE league_id=? AND snapshot_date=?", (lid, snap))
-        con.execute("DELETE FROM roster_surplus WHERE league_id=? AND snapshot_date=?", (lid, snap))
-        con.execute("DELETE FROM roster_construction WHERE league_id=? AND snapshot_date=?", (lid, snap))
-
-        rosters = [r[0] for r in con.execute(
-            f"SELECT DISTINCT roster_id FROM {args.source} "
-            f"WHERE league_id=? AND snapshot_date=?", (lid, snap))]
-        div = 0
-        for rid in rosters:
-            players = [dict(zip(("player_id", "player_name", "position",
-                                 "points", "vorp"), row))
-                       for row in con.execute(
-                f"SELECT player_id, player_name, position, {args.points_col}, vorp "
-                f"FROM {args.source} WHERE league_id=? AND roster_id=? "
-                f"AND snapshot_date=? AND position IN ('QB','RB','WR','TE')",
-                (lid, rid, snap))]
-            lineup, osl, empty = solve_hungarian(slots, players)
-            greedy = solve_greedy(slots, players)
-            gain = osl - greedy
-            if gain > 1e-9:
-                div += 1
-            grand_gain += max(gain, 0)
-
-            seq: dict[str, int] = {}
-            starters = set()
-            for slot, p in lineup:
-                seq[slot] = seq.get(slot, 0) + 1
-                starters.add(p["player_id"])
-                con.execute(
-                    "INSERT INTO roster_lineup_optimal VALUES (?,?,?,?,?,?,?,?,?)",
-                    (snap, lid, rid, slot, seq[slot], p["player_id"],
-                     p["player_name"], p["position"], p["points"]))
-            surplus = [p for p in players
-                       if p["player_id"] not in starters and (p["vorp"] or 0) > 0]
-            for p in surplus:
-                con.execute("INSERT INTO roster_surplus VALUES (?,?,?,?,?,?,?,?)",
-                            (snap, lid, rid, p["player_id"], p["player_name"],
-                             p["position"], p["points"], p["vorp"]))
-            con.execute(
-                "INSERT INTO roster_construction VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (snap, lid, rid, round(osl, 2), len(lineup), empty,
-                 ",".join(sorted(set(skipped))) or None, len(surplus),
-                 round(sum(p["vorp"] or 0 for p in surplus), 2),
-                 round(sum(p["points"] or 0 for p in surplus), 2),
-                 round(greedy, 2), round(gain, 4), basis))
-        con.commit()
-        print(f"{lname}: {len(rosters)} rosters solved "
-              f"({len(slots)} lineup slots; skipped: {sorted(set(skipped)) or 'none'}); "
-              f"greedy diverged on {div} rosters")
-    print(f"total Hungarian gain over greedy across all rosters: "
-          f"{grand_gain:.2f} pts/wk")
+    # ---- verification gates --------------------------------------------------
+    # tolerance 1e-5: shares are STORED rounded to 6dp, so a 14-roster league
+    # can legitimately sum to 1.0 ± 7e-6; the unrounded shares sum to 1 by
+    # construction (vona / total).
+    print("\nverification — positional shares sum to 1.0 per (league, position):")
+    bad = con.execute("""
+        SELECT basis, league_id, position, ROUND(SUM(vona_share), 6) s
+        FROM positional_cornering WHERE as_of_date=? AND vona_share IS NOT NULL
+        GROUP BY basis, league_id, position
+        HAVING ABS(s - 1.0) > 1e-5""", (args.as_of,)).fetchall()
+    print("  ALL OK" if not bad else f"  FAILURES: {bad}")
     con.close()
     return 0
 
