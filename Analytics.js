@@ -269,3 +269,22 @@ r.get('/leagues/:leagueId/cornering', async (req, res) => {
 });
 
 export default r;
+
+
+
+PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python lineup_solver.py --db data/dynasty.db --source v_player_value_projected
+Traceback (most recent call last):
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\lineup_solver.py", line 263, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl\lineup_solver.py", line 191, in main
+    leagues = con.execute(
+              ~~~~~~~~~~~^
+        "SELECT l.league_id, l.league_name, l.roster_positions_json "
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        f"  JOIN {args.source} v ON v.league_id = d2.league_id "
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        f"  WHERE d2.league_name = l.league_name)").fetchall()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: v_player_value_projected
