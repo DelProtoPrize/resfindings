@@ -24,6 +24,8 @@ let currentLeague = null;
 let currentRows = [];
 let prodByRoster = null;   // roster_id -> production_vbd (null = endpoint absent)
 let prodTotal = 0;
+let projByRoster = null;   // projected basis (m1); null until project_production.py + route v2
+let projTotal = 0;
 let valueTotal = 0;
 
 /* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
@@ -96,6 +98,8 @@ function rosterKpis(meta) {
     hhiTone(h));
 
   const { vShare, pShare } = shares(meta);
+  const projShare = projByRoster && projTotal > 0
+    ? (projByRoster[meta.roster_id] || 0) / projTotal : null;
   setKpi('kpiValueShare', vShare != null ? (vShare * 100).toFixed(1) + '%' : '–',
     `<span class="delta-tag flat">TEAM</span><span>${meta.owner_name || 'roster'} share of league value</span>`,
     'kpi-accent');
@@ -107,8 +111,9 @@ function rosterKpis(meta) {
     // current production — could be youth, injury, or SF-QB scarcity. The
     // sign is known; the cause needs the roster table to confirm.
     const word = gap > 0.01 ? 'win-now tilt' : gap < -0.01 ? 'value ahead of production' : 'balanced';
+    const projNote = projShare != null ? ` · proj ${(projShare * 100).toFixed(1)}%` : '';
     setKpi('kpiProdShare', (pShare * 100).toFixed(1) + '%',
-      `<span class="delta-tag ${tag}">${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp vs value</span><span>${word}</span>`,
+      `<span class="delta-tag ${tag}">${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp vs value</span><span>${word}${projNote}</span>`,
       gap > 0.01 ? 'kpi-good' : gap < -0.01 ? 'kpi-warn' : 'kpi-accent');
   } else {
     setKpi('kpiProdShare', '–',
@@ -159,7 +164,7 @@ async function render(leagueId) {
   const rows = await api(`/leagues/${leagueId}/diagnostics`);
   currentRows = rows;
   // Production sums (graceful: cards stay dashed if the route isn't deployed).
-  prodByRoster = null; prodTotal = 0;
+  prodByRoster = null; prodTotal = 0; projByRoster = null; projTotal = 0;
   try {
     const prod = await api(`/leagues/${leagueId}/production`);
     if (Array.isArray(prod)) {
@@ -167,6 +172,13 @@ async function render(leagueId) {
       prodTotal = prod.reduce((s, p) => s + (p.production_vbd || 0), 0);
     }
   } catch { /* endpoint absent — leave null */ }
+  try {
+    const proj = await api(`/leagues/${leagueId}/production?basis=projected`);
+    if (Array.isArray(proj) && proj.length) {
+      projByRoster = Object.fromEntries(proj.map((p) => [p.roster_id, p.production_vbd || 0]));
+      projTotal = proj.reduce((s, p) => s + (p.production_vbd || 0), 0);
+    }
+  } catch { /* projection layer not built — pills show a dash */ }
   leagueKpis(rows);
 
   // Horizontal bar of team value, colored by HHI concentration (red = top-heavy).
@@ -272,7 +284,8 @@ async function drillRoster(rosterId) {
     <div class="stat">Assets valued<b>${valued.length}</b></div>
     <div class="stat">Value-weighted age<b>${wAge ? wAge.toFixed(1) : '–'}</b></div>
     <div class="stat">Value share<b>${pctShare(meta.team_value, valueTotal)}</b></div>
-    <div class="stat">Production share<b>${prodByRoster ? pctShare(prodByRoster[rosterId], prodTotal) : '–'}</b></div>`;
+    <div class="stat">Prod. share (realized)<b>${prodByRoster ? pctShare(prodByRoster[rosterId], prodTotal) : '–'}</b></div>
+    <div class="stat" title="m1 projection — at preseason as-ofs statistically ≈ the ECR baseline (see Model Lab); its validated edge is in-season">Prod. share (projected)<b>${projByRoster ? pctShare(projByRoster[rosterId], projTotal) : '–'}</b></div>`;
 
   // Positional value allocation (donut).
   const byPos = {};
