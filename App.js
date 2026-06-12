@@ -124,16 +124,18 @@ function rosterKpis(meta) {
   }
 }
 
-/* ── Tape: win-now wedge = |VBD − FP|, the scatter's off-diagonal players.
+/* ── Tape: win-now wedge = |VBD − FC|, the scatter's off-diagonal players.
+      FC (settings-aware) is the market side per the locked rule; players
+      without an FC value (deep bench, mostly rookies) simply don't tape.
       Fed by the SAME /value rows the triangulation fetches — nothing extra,
       nothing invented. Stays in placeholder state if the VBD layer is empty. */
 function wireTape(rows) {
   const wrap = document.getElementById('tapeInner');
   if (!wrap) return;
-  const usable = rows.filter((d) => d.fp_market_value != null && d.vbd_value != null);
+  const usable = rows.filter((d) => d.fc_market_value != null && d.vbd_value != null);
   if (!usable.length) return; // keep honest placeholder
   const items = [...usable]
-    .map((d) => ({ ...d, wedge: d.vbd_value - d.fp_market_value }))
+    .map((d) => ({ ...d, wedge: d.vbd_value - d.fc_market_value }))
     .sort((a, b) => Math.abs(b.wedge) - Math.abs(a.wedge))
     .slice(0, 14)
     .map((d) => {
@@ -141,9 +143,9 @@ function wireTape(rows) {
       const wCol = d.wedge > 0 ? '#3ecf74' : '#f5605a';
       return `<div class="tape-item">
         <span class="pos-badge" style="background:${col}22;color:${col}">${d.position}</span>
-        <span class="name">${d.player_name}</span>
-        <span class="val">FP ${fmt(Math.round(d.fp_market_value))}</span>
-        <span class="delta" style="color:${wCol}" title="VBD minus FP market value">${d.wedge > 0 ? '+' : ''}${fmt(Math.round(d.wedge))} wedge</span>
+        <span class="name">${d.player_name}${d.years_exp === 0 ? '·R' : ''}</span>
+        <span class="val">FC ${fmt(Math.round(d.fc_market_value))}</span>
+        <span class="delta" style="color:${wCol}" title="VBD minus FC market value">${d.wedge > 0 ? '+' : ''}${fmt(Math.round(d.wedge))} wedge</span>
       </div>`;
     }).join('');
   wrap.innerHTML = items + items; // duplicated for seamless loop
@@ -370,17 +372,26 @@ async function renderTriangulation(leagueId) {
   panel.style.display = 'block';
   wireTape(rows);
 
+  // FC on x (settings-aware market). Players without an FC value are
+  // excluded and COUNTED — shown, never silently dropped or FP-substituted
+  // (mixing currencies on one axis would be fabrication by interpolation).
+  const plotRows = rows.filter((d) => d.fc_market_value != null);
+  const nNoFc = rows.length - plotRows.length;
   const colors = { QB: '#3d80f5', RB: '#3ecf74', WR: '#e8a838', TE: '#b47cf5' };
-  const maxv = Math.max(1, ...rows.map((d) => Math.max(d.fp_market_value || 0, d.vbd_value || 0)));
+  const maxv = Math.max(1, ...plotRows.map((d) => Math.max(d.fc_market_value || 0, d.vbd_value || 0)));
   const traces = ['QB', 'RB', 'WR', 'TE'].map((pos) => {
-    const pr = rows.filter((d) => d.position === pos);
+    const pr = plotRows.filter((d) => d.position === pos);
     return {
       type: 'scatter', mode: 'markers', name: pos,
-      x: pr.map((d) => d.fp_market_value),
+      x: pr.map((d) => d.fc_market_value),
       y: pr.map((d) => d.vbd_value),
-      text: pr.map((d) => `${d.player_name}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
-      marker: { color: colors[pos], size: 9, opacity: 0.82, line: { color: '#161b22', width: 1 } },
-      hovertemplate: '%{text}<br>FP %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
+      text: pr.map((d) => `${d.player_name}${d.years_exp === 0 ? ' (R)' : ''}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
+      marker: {
+        color: colors[pos], size: 9, opacity: 0.82,
+        symbol: pr.map((d) => (d.years_exp === 0 ? 'diamond-open' : 'circle')),
+        line: { color: '#161b22', width: 1 },
+      },
+      hovertemplate: '%{text}<br>FC %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
     };
   });
   traces.push({
@@ -391,7 +402,7 @@ async function renderTriangulation(leagueId) {
   Plotly.react('triChart', traces, {
     margin: { l: 66, r: 20, t: 10, b: 52 },
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: INK },
-    xaxis: { title: 'Dynasty value — FantasyPros', gridcolor: GRID, zeroline: false },
+    xaxis: { title: 'Dynasty value — FantasyCalc (settings-aware)', gridcolor: GRID, zeroline: false },
     yaxis: { title: 'Win-now value — VBD (pts over replacement)', gridcolor: GRID, zeroline: false },
     legend: { orientation: 'h', y: 1.1 },
     annotations: [
@@ -399,6 +410,10 @@ async function renderTriangulation(leagueId) {
         text: 'produces now · market discounts (sell-high)', font: { size: 10, color: '#8a95a8' } },
       { x: maxv * 0.96, y: maxv * 0.05, xanchor: 'right', showarrow: false,
         text: 'market pays ahead of production (youth / injury / SF-QB)', font: { size: 10, color: '#8a95a8' } },
+      ...(nNoFc > 0 ? [{ x: maxv * 0.96, y: maxv * 0.0, xanchor: 'right', yanchor: 'top', showarrow: false,
+        text: `${nNoFc} player${nNoFc === 1 ? '' : 's'} without an FC value not shown · ◇ = rookie`, font: { size: 9, color: '#3d4756' } }]
+        : [{ x: maxv * 0.96, y: maxv * 0.0, xanchor: 'right', yanchor: 'top', showarrow: false,
+        text: '◇ = rookie', font: { size: 9, color: '#3d4756' } }]),
     ],
   }, { displayModeBar: false, responsive: true });
 }
@@ -454,7 +469,7 @@ async function drillRoster(rosterId) {
     </tr></thead><tbody>
       ${assets.map((a) => `<tr>
         <td>${a.player_name || '–'}</td>
-        <td><span class="pos pos-${a.position || ''}">${a.position || '?'}</span></td>
+        <td><span class="pos pos-${a.position || ''}">${a.position || '?'}</span>${a.years_exp === 0 ? ' <span class="pos" title="rookie — no NFL production history; projections are dashes by design" style="background:rgba(232,168,56,.18);color:var(--wr)">R</span>' : ''}</td>
         <td class="num">${a.age ?? '–'}</td>
         <td>${a.nfl_team || '–'}</td>
         <td class="num">${fmt(a.fp_market_value)}</td>
