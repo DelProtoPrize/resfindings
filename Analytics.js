@@ -285,25 +285,3 @@ export default r;
 
 
 
-PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python project_production.py --db data/dynasty.db
-training m1_ridge_v1 on 2019-2025 (lambda validated on 2025) ...
-  fitted positions: ['QB', 'RB', 'TE', 'WR'] on 13,821 training pairs
-projected rows: 1340 rostered assets | NULL projections (no DP rank at as-of, mostly 2026 rookies): 271
-
-verification — projected Production Share sums per league:
-  Paid In Full: shares sum 1.000000
-  The Drew League: shares sum 1.000000
-  Ballers University: shares sum 1.000000
-  The Land of Punt: shares sum 1.000000
-PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python cornering_metrics.py --db data/dynasty.db
-Paid In Full: 14 rosters solved (7 lineup slots; skipped: ['DEF', 'K']); greedy diverged on 0 rosters
-The Land of Punt: 14 rosters solved (9 lineup slots; skipped: ['DB', 'DL', 'IDP_FLEX', 'LB']); greedy diverged on 0 rosters
-Ballers University: 14 rosters solved (9 lineup slots; skipped: ['DB', 'DL', 'IDP_FLEX', 'LB']); greedy diverged on 0 rosters
-The Drew League: 14 rosters solved (10 lineup slots; skipped: none); greedy diverged on 0 rosters
-total Hungarian gain over greedy across all rosters: 0.00 pts/wk
-PS C:\Users\delro\OneDrive\Documents\myanalysis\dynasty-portfolio\etl> python lineup_solver.py --db data/dynasty.db --source v_player_value_projected
-source 'v_player_value_projected' does not exist in data/dynasty.db.
-Build order:
-  1. python project_production.py --db data/dynasty.db
-  2. python cornering_metrics.py  --db data/dynasty.db
-  3. re-run this command
