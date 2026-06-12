@@ -75,26 +75,39 @@ r.get('/leagues/:id/arbitrage', async (req, res, next) => {
 
 const MISSING_REL = /no such (table|view)|does not exist|relation .* does not exist/i;
 
-// Three-source value triangulation: expert (FP) vs market (FC) vs production (VBD).
-// Off-diagonal players are the signal — what a player PRODUCES (win-now) vs what the
-// dynasty market PAYS (future). Returns [] gracefully if points_model.py hasn't run.
-r.get('/leagues/:id/value', async (req, res, next) => {
-  try {
-    const sql = `
-      SELECT player_name, position, age,
-             fp_market_value, fc_market_value, vbd_value, ppg, vorp
-      FROM v_player_value
-      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_player_value)
-        AND league_id = ?
-        AND vbd_value IS NOT NULL AND fp_market_value IS NOT NULL
-      ORDER BY fp_market_value DESC
-    `;
-    res.json(await query(sql, [req.params.id]));
-  } catch (e) {
-    if (MISSING_REL.test(String(e.message))) return res.json([]); // VBD layer not built yet
-    next(e);
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// REPLACES the existing GET /leagues/:leagueId/value route in
+// server/src/routes/analytics.js. Two changes vs the old route:
+//   1. fc_market_value is served — the Win-Now scatter's x-axis moves to
+//      FantasyCalc (the locked rule: market metrics on FC; FP is a
+//      deterministic exponential of ordinal ranks).
+//   2. years_exp (LEFT JOIN dim_players) — rookie designation downstream.
+// Columns are a superset of what app.js reads; SQL verified against the
+// warehouse (Drew: 315 rows, FC populated 310, top-FC ordering sane).
+// ─────────────────────────────────────────────────────────────────────────────
+
+r.get('/leagues/:leagueId/value', async (req, res) => {
+  const lid = req.params.leagueId;
+  const rows = await query(
+    `SELECT v.player_id, v.player_name, v.position, v.roster_id,
+            v.fp_market_value, v.fc_market_value, v.vbd_value,
+            v.ppg, v.vorp,
+            d.years_exp
+     FROM v_player_value v
+     LEFT JOIN dim_players d ON d.player_id = v.player_id
+     WHERE v.league_id = ?
+       AND v.snapshot_date = (
+         SELECT MAX(snapshot_date) FROM v_player_value WHERE league_id = ?
+       )`,
+    [lid, lid]
+  );
+  res.json(rows);
 });
+
+// OPTIONAL one-line companion: if you also want the rookie badge in the
+// roster drill table, add `d.years_exp` (with the same LEFT JOIN dim_players)
+// to your existing /leagues/:leagueId/rosters/:rosterId route's SELECT.
+// app.js renders the badge null-safely either way.
 
 // Roster drill-down: one team's full asset list with values, age, arbitrage, and
 // (if available) production-grounded VBD/PPG. Falls back to the market-only query
