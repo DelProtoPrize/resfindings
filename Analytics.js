@@ -285,3 +285,46 @@ export default r;
 
 
 
+ Executive summary / insight rail at top or side: 2-4 auto-generated bullets or cards ("Team X corners 38% of RB VONA — strong sell-high candidates at WR"; "3 high arb BUY opportunities this week"). Pulls from existing panels.
+• Improve league selector + add cross-league views: Searchable combobox/multi-select, "Portfolio Overview" aggregating across leagues (total value, concentration trends).
+• Enhance drill-downs and tables: Add client-side sort/filter/search (use existing shadcn patterns or bits-ui), column visibility, export-this-table buttons.
+• Surface existing backend: Promote construction/surplus (optimal lineup value vs surplus capital) into a dedicated or tabbed "Roster Construction" panel. This directly supports the "lineup_solver" work.
+• Strengthen narratives everywhere: Expand the cornering diag text pattern. Add short "interpretation" blurbs or "why it matters" for KPIs/charts.
+
+Differentiation & Trust (leverage Model Lab + data)
+
+• Prominently link or embed "Model Validation" summary from Model Lab into main dashboard.
+• Add time-series elements (even simple sparklines or small delta % on value/HHI using historical facts).
+• Better tooltips + methodology drawer ("This HHI uses... Data from...").
+
+SaaS / Enterprise Hooks (directly monetizable)
+
+• One-click exports (current league snapshot CSV, PDF "report", chart PNGs) + "Share view" (URL state deep links or snapshot image).
+• Basic watchlist + alerts scaffolding (even static "mark player" + note that would persist client-side or via future backend).
+• "Trade evaluator" mini-workflow built on the triangulation/arb data (select 2+ assets from different rosters, instant net delta + fairness score + roster impact).
+• Saved views / custom dashboards (localStorage first, later account).
+
+Polish & Reach
+
+• Responsive improvements + mobile-first testing (collapsible sections, better touch targets).
+• Consistent empty/loading skeletons, error boundaries.
+• Search/global player finder (big win for usability).
+• Visual upgrades: better chart controls (Plotly config), subtle animations, improved card grouping/sections, sticky header or nav affordances, refined typography hierarchy.
+• Accessibility pass + keyboard navigation for core flows.
+• Branded "pro" touches: logo placeholder area, footer with data timestamps/methodology link, version or "as of" clarity.
+
+Longer-term for higher valuation
+
+• User accounts + multi-user leagues (commissioner shares read-only or collab views).
+• White-label / embed options or API for other tools.
+• Theming / light mode or custom accent (for league branding).
+• Integration points (Sleeper sync notes, export to trade block tools).
+
+Expected Business Impact
+
+A polished version of this could move from "cool open-source analytics toy for one league" to a credible B2C SaaS or B2B intelligence layer:
+• Higher conversion/retention because users reach "aha" faster and return for ongoing monitoring.
+• Defensibility: the UI makes the unique cornering + arb + validated modeling obvious and usable.
+• Pricing power: export/reporting features, multi-league, alerts, and "pro" polish justify tiers.
+• Sales narrative: "Bloomberg terminal for dynasty GMs and league operators."
+
